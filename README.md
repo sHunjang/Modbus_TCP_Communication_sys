@@ -171,52 +171,6 @@ Timestamp,Power (kW),Energy (kWh),Power Factor,Voltage (V),Current (A),Status
 
 ---
 
-## 🔍 트러블슈팅
-
-### 문제 1: 연결 실패 (Connection Refused)
-
-**원인**: 
-- 서버가 실행되지 않음
-- 방화벽 차단
-- IP 주소 오류
-
-**해결**:
-```
-1. PC 1에서 서버가 실행 중인지 확인
-2. 방화벽 설정 확인 (포트 502 열림)
-3. IP 주소 재확인 (ipconfig)
-4. 같은 네트워크인지 확인 (같은 WiFi/공유기)
-```
-
-### 문제 2: Permission Denied (포트 502)
-
-**원인**: 포트 502는 Well-Known Port로 관리자 권한 필요
-
-**해결**:
-```
-# Windows
-우클릭 → "관리자 권한으로 실행"
-
-# Linux/Mac
-sudo python modbus_server.py
-
-# 또는 다른 포트 사용
-포트 5020으로 변경 (코드에서 502 → 5020)
-```
-
-### 문제 3: 데이터가 0으로 표시됨
-
-**원인**: Float 변환 오류 또는 레지스터 미설정
-
-**해결**:
-```
-1. 서버가 정상 작동하는지 확인
-2. pymodbus 버전 확인 (3.5.4 권장)
-3. 서버 재시작
-```
-
----
-
 ## 📚 기술 스택
 
 - **언어**: Python 3.8+
@@ -271,28 +225,6 @@ sudo python modbus_server.py
 ### Modbus 프로토콜
 - [Modbus 공식 사이트](https://modbus.org/)
 - [pymodbus 공식 문서](https://pymodbus.readthedocs.io/)
-
-### 학습 자료
-- 네트워크 기초: TCP/IP 프로토콜
-- Modbus RTU vs Modbus TCP 차이
-- Float → 레지스터 변환 (IEEE 754)
-
----
-
-## 👨‍💻 개발자
-
-- **프로젝트**: Modbus TCP 통신 테스트
-- **목적**: 네트워크 통신 및 데이터 수집 학습
-- **날짜**: 2025년 10월
-
----
-
-## 📞 문의
-
-문제가 발생하거나 질문이 있으시면:
-1. 트러블슈팅 섹션 확인
-2. pymodbus 버전 확인 (`pip show pymodbus`)
-3. 네트워크 연결 상태 확인
 
 ---
 
