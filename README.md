@@ -1,6 +1,3 @@
-# README.md 파일
-
-```markdown
 # 🔌 Modbus TCP 통신 테스트 프로젝트
 
 2대 PC 간 Modbus TCP 통신을 통한 전력 데이터 송수신 및 저장 테스트 프로그램
