@@ -80,22 +80,6 @@ HMI IP: 192.168.1.100
 
 ---
 
-## 📁 프로젝트 구조
-
-ModbusTCPCollector/
-├── main.py # 메인 프로그램
-├── core/
-│ ├── database.py # DB 관리
-│ ├── modbus_thread.py # Modbus 통신
-│ ├── data_aggregator.py # 데이터 집계
-│ ├── db_writer.py # DB 쓰기
-│ └── dummy_modbus_server.py # 테스트용 더미 서버
-├── requirements.txt # 의존성
-├── .gitignore # Git 무시 파일
-└── README.md # 이 파일
-
----
-
 ## 🔌 지원 장비
 
 | 제조사 | 모델 | 프로토콜 | 상태 |
