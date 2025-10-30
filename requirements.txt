@@ -1,0 +1,7 @@
+# Hospital Power Monitor
+# 필요한 라이브러리
+
+PyQt6==6.6.1
+psycopg2-binary==2.9.9
+pymodbus==3.5.0
+python-dotenv==1.0.0
