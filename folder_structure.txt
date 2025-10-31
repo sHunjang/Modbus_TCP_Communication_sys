@@ -1,22 +1,24 @@
 Hospital_Power_Monitor/
-│
-├── main.py                          # 메인 GUI 프로그램
-│
-├── core/
-│   ├── __init__.py
-│   ├── modbus_thread.py             # HMI 통신 (5초, 메모리)
-│   ├── data_aggregator.py           # 1분 평균 계산
-│   ├── db_writer.py                 # DB 저장 (1분 주기)
-│   └── database.py                  # PostgreSQL 연결
-│
-├── config/
-│   └── database.json                # DB 설정만
-│
-├── sql/
-│   └── init_hospital_table.sql      # 병원 테이블 생성 SQL
-│
-├── data/                            # CSV 백업 (선택사항)
-│   └── hospitals.json               # 병원 목록 저장
-│
-├── requirements.txt
-└── README.md
+|   .gitignore
+|   folder_structure.txt
+|   main.py
+|   README.md
+|   requirements.txt
+|   simulate_hmi_servers.py
+|   
++---config
+|       database.json
+|       hospital.json
+|
++---core
+|   |   csv_exporter.py
+|   |   database.py
+|   |   data_aggregator.py
+|   |   db_writer.py
+|   |   dummy_modbus_server.py
+|   |   modbus_thread.py
+|   |   __init__.py
+|   |
+|
+\---sql
+        init_hospital_table.sql

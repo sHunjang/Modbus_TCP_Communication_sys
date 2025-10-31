@@ -1,35 +1,19 @@
 {
-    "description": "병원 목록 설정",
-    "hospitals": [
-        {
-            "id": "인천병원",
-            "name": "인천병원",
-            "hmi_ip": "192.168.0.100",
-            "port": 502,
-            "unit_id": 1,
-            "meter_type": "3P4W",
-            "table_name": "인천병원_1min",
-            "enabled": true
-        },
-        {
-            "id": "안산병원",
-            "name": "안산병원",
-            "hmi_ip": "192.168.0.101",
-            "port": 502,
-            "unit_id": 1,
-            "meter_type": "3P4W",
-            "table_name": "안산병원_1min",
-            "enabled": true
-        },
-        {
-            "id": "대구병원",
-            "name": "대구병원",
-            "hmi_ip": "192.168.0.102",
-            "port": 502,
-            "unit_id": 1,
-            "meter_type": "3P3W",
-            "table_name": "대구병원_1min",
-            "enabled": false
-        }
-    ]
+  "hospitals": [
+    {
+      "hospital_name": "인천병원",
+      "hmi_ip": "127.0.0.1",
+      "port": 5020
+    },
+    {
+      "hospital_name": "안산병원",
+      "hmi_ip": "127.0.0.1",
+      "port": 5021
+    },
+    {
+      "hospital_name": "대구병원",
+      "hmi_ip": "127.0.0.1",
+      "port": 5022
+    }
+  ]
 }
