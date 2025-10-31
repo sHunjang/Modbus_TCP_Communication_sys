@@ -407,13 +407,13 @@ class MainWindow(QMainWindow):
         self.hospital_table = QTableWidget()
         self.hospital_table.setColumnCount(4)
         self.hospital_table.setHorizontalHeaderLabels([
-            "순서", "병원명", "전력량 (kWh)", "액션"
+            "순서", "병원명", "전력량 (kWh)", " "
         ])
         
         header = self.hospital_table.horizontalHeader()
         header.setSectionResizeMode(0, QHeaderView.ResizeMode.ResizeToContents)
         header.setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
-        header.setSectionResizeMode(2, QHeaderView.ResizeMode.ResizeToContents)
+        header.setSectionResizeMode(2, QHeaderView.ResizeMode.Stretch)
         header.setSectionResizeMode(3, QHeaderView.ResizeMode.ResizeToContents)
         
         table_font = self.hospital_table.font()

@@ -59,7 +59,7 @@ class DummyModbusServer:
                     self.energy_value += increment
                     
                     # 로그 출력 (선택사항)
-                    # print(f"  [{self.hospital_name}] 전력량: {self.energy_value:.2f} kWh")
+                    print(f"  [{self.hospital_name}] 전력량: {self.energy_value:.2f} kWh")
                 
                 time.sleep(5)  # 5초마다 업데이트
             
