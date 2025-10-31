@@ -5,7 +5,7 @@
 - 병원 추가/삭제 기능
 - 큰 글자 (16pt~)
 - 흰색 배경
-- 현재 시간 표시 (좌측 상단)
+- 현재 시간 표시 (우측 상단)
 - CSV 데이터 내보내기
 """
 
@@ -196,7 +196,7 @@ class CSVExporter:
 
 
 # ============================================================
-# 메인 윈도우 (개선 UI)
+# 메인 윈도우
 # ============================================================
 
 class MainWindow(QMainWindow):
@@ -210,6 +210,10 @@ class MainWindow(QMainWindow):
         self.hospital_monitors = {}
         
         self.init_ui()
+        
+        # ✨ 테이블 초기화
+        self.hospital_table.setRowCount(0)
+        
         self.load_hospitals()
         
         # 시간 갱신 타이머
@@ -226,7 +230,7 @@ class MainWindow(QMainWindow):
     def init_ui(self):
         """UI 초기화"""
         self.setWindowTitle("🏥 병원 전력량 모니터링 시스템")
-        self.setGeometry(100, 50, 1200, 1000)  # ✨ 높이 증가
+        self.setGeometry(100, 50, 1200, 1000)
         
         # ✨ 흰색 배경
         self.setStyleSheet("QMainWindow { background-color: white; }")
@@ -277,8 +281,8 @@ class MainWindow(QMainWindow):
         self.statusBar().setFont(status_font)
     
     def create_export_section(self):
-        """CSV 내보내기 섹션"""
-        group = QGroupBox("📥 데이터 내보내기 (CSV)")
+        """CSV 저장 섹션"""
+        group = QGroupBox("📥 데이터 저장 (CSV)")
         group.setStyleSheet("QGroupBox { font-size: 13pt; font-weight: bold; }")
         layout = QHBoxLayout()
         
@@ -305,7 +309,7 @@ class MainWindow(QMainWindow):
         layout.addWidget(self.end_datetime)
         
         # 내보내기 버튼
-        export_btn = QPushButton("📥 CSV 내보내기")
+        export_btn = QPushButton("📥 CSV 저장")
         export_btn.clicked.connect(self.export_to_csv)
         export_btn.setMinimumHeight(35)
         export_btn.setFont(font)
@@ -337,7 +341,7 @@ class MainWindow(QMainWindow):
         # 병원명
         layout.addWidget(self.create_label("병원명:"))
         self.hospital_name_input = QLineEdit()
-        self.hospital_name_input.setPlaceholderText("예: 창원병원")
+        self.hospital_name_input.setPlaceholderText("지역+병원 입력하시오.")
         self.hospital_name_input.setMinimumHeight(35)
         font = self.hospital_name_input.font()
         font.setPointSize(11)
@@ -347,7 +351,7 @@ class MainWindow(QMainWindow):
         # HMI IP
         layout.addWidget(self.create_label("HMI IP:"))
         self.hmi_ip_input = QLineEdit()
-        self.hmi_ip_input.setPlaceholderText("192.168.1.100")
+        self.hmi_ip_input.setPlaceholderText("ex: 192.168.1.100")
         self.hmi_ip_input.setMinimumHeight(35)
         self.hmi_ip_input.setFont(font)
         layout.addWidget(self.hmi_ip_input)
@@ -356,7 +360,7 @@ class MainWindow(QMainWindow):
         layout.addWidget(self.create_label("포트:"))
         self.port_input = QSpinBox()
         self.port_input.setRange(1, 65535)
-        self.port_input.setValue(502)
+        self.port_input.setValue(502)  # ✨ 기본값 추가!
         self.port_input.setMinimumHeight(35)
         self.port_input.setFont(font)
         self.port_input.setMinimumWidth(80)
@@ -460,11 +464,10 @@ class MainWindow(QMainWindow):
         return group
     
     def export_to_csv(self):
-        """CSV로 내보내기 (다운로드 폴더에 저장)"""
+        """CSV로 내보내기"""
         start_dt = self.start_datetime.dateTime().toPyDateTime()
         end_dt = self.end_datetime.dateTime().toPyDateTime()
         
-        # 유효성 검사
         if start_dt >= end_dt:
             QMessageBox.warning(self, "입력 오류", "시작 시간이 종료 시간보다 먼저여야 합니다")
             return
@@ -473,7 +476,6 @@ class MainWindow(QMainWindow):
             QMessageBox.warning(self, "입력 오류", "최대 90일까지만 내보낼 수 있습니다")
             return
         
-        # ✨ 다운로드 폴더 경로 설정
         download_folder = os.path.expanduser("~/Downloads")
         export_dir = os.path.join(download_folder, "병원전력량데이터")
         
@@ -517,7 +519,6 @@ class MainWindow(QMainWindow):
         
         finally:
             self.statusBar().showMessage("준비")
-
     
     def add_hospital(self):
         """병원 추가"""
@@ -579,24 +580,35 @@ class MainWindow(QMainWindow):
     def add_hospital_to_table(self, hospital_name):
         """테이블에 병원 행 추가"""
         row = self.hospital_table.rowCount()
-        self.hospital_table.insertRow(row)
         
+        # ✨ 중복 체크
+        for r in range(row):
+            existing_name = self.hospital_table.item(r, 1).text()
+            if existing_name == hospital_name:
+                self.add_log(f"⚠️ {hospital_name}은 이미 테이블에 있습니다.")
+                return
+        
+        self.hospital_table.insertRow(row)
         self.hospital_table.setRowHeight(row, 35)
         
         monitor = self.hospital_monitors[hospital_name]
         
+        # 순서
         order_item = QTableWidgetItem(str(row + 1))
         order_item.setFont(self.get_table_font())
         self.hospital_table.setItem(row, 0, order_item)
         
+        # 병원명
         name_item = QTableWidgetItem(hospital_name)
         name_item.setFont(self.get_table_font())
         self.hospital_table.setItem(row, 1, name_item)
         
+        # 전력량
         energy_item = QTableWidgetItem("0.00")
         energy_item.setFont(self.get_table_font())
         self.hospital_table.setItem(row, 2, energy_item)
         
+        # 액션 버튼
         btn_layout = QHBoxLayout()
         
         delete_btn = QPushButton("🗑️ 삭제")
@@ -641,25 +653,24 @@ class MainWindow(QMainWindow):
         """DB에서 병원 목록 로드"""
         hospitals = self.database.get_hospitals()
         
-        # ✨ DB가 비어있으면 기본값 없이 시작
+        # ✨ 중복 방지
+        if len(self.hospital_monitors) > 0:
+            self.add_log("⚠️ 이미 로드된 병원이 있습니다. 건너뜁니다.")
+            return
+        
+        # ✨ DB가 비어있으면
         if len(hospitals) == 0:
             self.add_log("📝 DB가 비어있습니다. UI에서 병원을 추가해주세요.")
             return
         
         # 각 병원 모니터 생성
         for hospital in hospitals:
-            monitor = HospitalMonitor(hospital, self.database, use_dummy=self.use_dummy)
-            monitor.modbus_thread.log_message.connect(self.add_log)
-            monitor.db_writer.log_message.connect(self.add_log)
-            monitor.start()
             
-            self.hospital_monitors[hospital['hospital_name']] = monitor
-            self.add_hospital_to_table(hospital['hospital_name'])
+            # 중복 체크
+            if hospital['hospital_name'] in self.hospital_monitors:
+                self.add_log(f"⚠️ {hospital['hospital_name']}은 이미 로드되었습니다.")
+                continue
             
-            self.add_log(f"✅ {hospital['hospital_name']} 모니터링 시작")
-
-        
-        for hospital in hospitals:
             monitor = HospitalMonitor(hospital, self.database, use_dummy=self.use_dummy)
             monitor.modbus_thread.log_message.connect(self.add_log)
             monitor.db_writer.log_message.connect(self.add_log)
@@ -739,7 +750,7 @@ def main():
     print("📅 시작 시간:", datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
     print("="*60 + "\n")
     
-    USE_DUMMY_MODE = False
+    USE_DUMMY_MODE = True
     
     if USE_DUMMY_MODE:
         print("🔌 더미 모드 실행 중... (가상 데이터)\n")
