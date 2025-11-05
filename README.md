@@ -80,18 +80,6 @@ HMI IP: 192.168.1.100
 
 ---
 
-## 🔌 지원 장비
-
-| 제조사 | 모델 | 프로토콜 | 상태 |
-|------|------|--------|------|
-| LS Industrial | EM480 | Modbus TCP | ✅ |
-| Schneider | PM6000 | Modbus TCP | ✅ |
-| ABB | PowerLogic | Modbus TCP | ✅ |
-| Hioki | 3197 | Modbus TCP | ✅ |
-| 기타 | Modbus TCP 호환 | Modbus TCP | ✅ |
-
----
-
 ## 📊 기술 스택
 
 - **언어**: Python 3.8+
