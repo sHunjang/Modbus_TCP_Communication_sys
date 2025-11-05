@@ -15,6 +15,7 @@ from PyQt6.QtWidgets import *
 from PyQt6.QtCore import *
 from PyQt6.QtGui import *
 from datetime import datetime, timedelta
+from PyQt6.QtCore import QObject, pyqtSignal, pyqtSlot
 
 from core.database import DatabaseManager
 from core.modbus_thread import ModbusThread
@@ -27,25 +28,33 @@ from core.dummy_modbus_server import create_dummy_server, stop_all_dummy_servers
 # 병원 모니터 클래스
 # ============================================================
 
-class HospitalMonitor:
+from PyQt6.QtCore import QObject, pyqtSignal, pyqtSlot
+
+# ★ QObject 상속 추가!
+class HospitalMonitor(QObject):
     """병원 모니터링"""
+    
+    # ★ 신호 정의 (필요시 사용)
+    data_updated = pyqtSignal(str, dict)
     
     def __init__(self, hospital_info, database, use_dummy=False):
         """초기화"""
+        super().__init__()  # ★ 부모 클래스 초기화 필수!
+        
         self.hospital_info = hospital_info
         self.database = database
         self.hospital_name = hospital_info['hospital_name']
         self.table_name = hospital_info['table_name']
-        
+
         # 더미 서버 생성
         if use_dummy:
             try:
                 create_dummy_server(self.hospital_name, port=5020 + hash(self.hospital_name) % 100)
             except:
                 pass
-        
+
         self.aggregator = DataAggregator(self.hospital_name)
-        
+
         # Modbus 스레드
         self.modbus_thread = ModbusThread(
             hospital_name=self.hospital_name,
@@ -55,7 +64,7 @@ class HospitalMonitor:
             meter_type=hospital_info.get('meter_type', '3P4W'),
             use_dummy=use_dummy
         )
-        
+
         # DB 저장 스레드
         self.db_writer = DBWriterThread(
             database=self.database,
@@ -63,26 +72,63 @@ class HospitalMonitor:
             table_name=self.table_name,
             hospital_name=self.hospital_name
         )
-        
+
         self.latest_energy = None
-    
+
     def start(self):
         """모니터링 시작"""
+        # ★ 신호 연결 (이제 on_data_received가 QObject 메서드이므로 정상 작동)
         self.modbus_thread.data_received.connect(self.on_data_received)
         self.modbus_thread.start()
         self.db_writer.start()
-    
+
     def stop(self):
         """모니터링 중지"""
         self.modbus_thread.stop()
         self.modbus_thread.wait()
         self.db_writer.stop()
         self.db_writer.wait()
-    
-    def on_data_received(self, energy_kwh):
-        """데이터 수신"""
-        self.latest_energy = energy_kwh
-        self.aggregator.add_data(energy_kwh)
+
+    @pyqtSlot(dict)  # ★ PyQt 슬롯 데코레이터 필수!
+    def on_data_received(self, data_dict):
+        """
+        데이터 수신 (3상 전체 저장)
+        
+        Args:
+            data_dict: {
+                "meter_type": "3P4W",
+                "voltage_l1": 230.5,
+                "current_l1": 10.5,
+                "power_l1": 20000,
+                "energy_l1": 30000,
+                "voltage_l2": 231.2,
+                "current_l2": 11.2,
+                "power_l2": 21000,
+                "energy_l2": 30001,
+                "voltage_l3": 229.8,
+                "current_l3": 9.8,
+                "power_l3": 19000,
+                "energy_l3": 30002,
+                "timestamp": "2025-11-05 15:20:24"
+            }
+        """
+        try:
+            if isinstance(data_dict, dict):
+                # ★ 전체 dict를 그대로 집계기에 전달
+                self.aggregator.add_data(data_dict)
+                
+                # 최신 에너지 값 저장 (L1 기준)
+                if 'energy_l1' in data_dict:
+                    self.latest_energy = data_dict['energy_l1']
+                elif 'energy' in data_dict:
+                    self.latest_energy = data_dict['energy']
+            else:
+                print(f"❌ 잘못된 데이터 타입: {type(data_dict)}")
+                
+        except Exception as e:
+            print(f"❌ on_data_received 오류: {e}")
+
+            
 
 
 # ============================================================
@@ -211,7 +257,7 @@ class MainWindow(QMainWindow):
         
         self.init_ui()
         
-        # ✨ 테이블 초기화
+        # 테이블 초기화
         self.hospital_table.setRowCount(0)
         
         self.load_hospitals()
@@ -232,7 +278,7 @@ class MainWindow(QMainWindow):
         self.setWindowTitle("🏥 병원 전력량 모니터링 시스템")
         self.setGeometry(100, 50, 1200, 1000)
         
-        # ✨ 흰색 배경
+        # 흰색 배경
         self.setStyleSheet("QMainWindow { background-color: white; }")
         
         central_widget = QWidget()
@@ -360,7 +406,7 @@ class MainWindow(QMainWindow):
         layout.addWidget(self.create_label("포트:"))
         self.port_input = QSpinBox()
         self.port_input.setRange(1, 65535)
-        self.port_input.setValue(502)  # ✨ 기본값 추가!
+        self.port_input.setValue(502)  # 기본값 추가!
         self.port_input.setMinimumHeight(35)
         self.port_input.setFont(font)
         self.port_input.setMinimumWidth(80)
@@ -581,7 +627,7 @@ class MainWindow(QMainWindow):
         """테이블에 병원 행 추가"""
         row = self.hospital_table.rowCount()
         
-        # ✨ 중복 체크
+        # 중복 체크
         for r in range(row):
             existing_name = self.hospital_table.item(r, 1).text()
             if existing_name == hospital_name:
@@ -653,12 +699,12 @@ class MainWindow(QMainWindow):
         """DB에서 병원 목록 로드"""
         hospitals = self.database.get_hospitals()
         
-        # ✨ 중복 방지
+        # 중복 방지
         if len(self.hospital_monitors) > 0:
             self.add_log("⚠️ 이미 로드된 병원이 있습니다. 건너뜁니다.")
             return
         
-        # ✨ DB가 비어있으면
+        # DB가 비어있으면
         if len(hospitals) == 0:
             self.add_log("📝 DB가 비어있습니다. UI에서 병원을 추가해주세요.")
             return
