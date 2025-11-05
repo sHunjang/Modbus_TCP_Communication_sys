@@ -102,7 +102,7 @@ class DatabaseManager:
                 self.release_connection(conn)
 
     def register_hospital(self, hospital_name, table_name, hmi_ip, port,
-                         unit_id, meter_type):
+                        unit_id, meter_type):
         """
         병원 등록 및 테이블 생성
         ★ 각 작업마다 새 연결 사용
@@ -110,24 +110,33 @@ class DatabaseManager:
         
         # ★ Step 1: hospitals 테이블에 등록 (새 연결)
         conn = None
+        already_exists = False
+        
         try:
             conn = self.get_connection()
             cursor = conn.cursor()
 
+            # ★ 이미 존재하는지 먼저 확인
+            cursor.execute("SELECT id FROM hospitals WHERE hospital_name = %s", (hospital_name,))
+            existing = cursor.fetchone()
+            
+            if existing:
+                already_exists = True
+                cursor.close()
+                self.release_connection(conn)
+                print(f"⚠️ {hospital_name}은 이미 등록되어 있습니다.")
+                return False
+
+            # ★ 새로 등록
             cursor.execute("""
                 INSERT INTO hospitals
                 (hospital_name, table_name, hmi_ip, port, unit_id, meter_type)
                 VALUES (%s, %s, %s, %s, %s, %s)
-                ON CONFLICT (hospital_name) DO NOTHING
             """, (hospital_name, table_name, hmi_ip, port, unit_id, meter_type))
 
             conn.commit()
             cursor.close()
             self.release_connection(conn)
-
-            if cursor.rowcount == 0:
-                print(f"⚠️ {hospital_name}은 이미 등록되어 있습니다.")
-                return False
 
         except Exception as e:
             if conn:
@@ -184,6 +193,7 @@ class DatabaseManager:
                 self.release_connection(conn)
             print(f"❌ 테이블 생성 오류: {e}")
             return False
+
 
     def get_hospitals(self):
         """병원 목록 조회"""
