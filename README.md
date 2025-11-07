@@ -5,7 +5,6 @@
 ![Python](https://img.shields.io/badge/Python-3.8+-blue?logo=python)
 ![PyQt6](https://img.shields.io/badge/PyQt6-GUI-green)
 ![PostgreSQL](https://img.shields.io/badge/PostgreSQL-Database-lightblue?logo=postgresql)
-![License](https://img.shields.io/badge/License-MIT-yellow)
 
 ## 📋 개요
 
