@@ -25,29 +25,36 @@
 ## 🔧 설치 방법
 
 ### 1. 저장소 클론
-
+```bash
 git clone https://github.com/yourusername/ModbusTCPCollector.git
 cd ModbusTCPCollector
+```
 
 ### 3. 의존성 설치
+```bash
 pip install -r requirements.txt
-
+```
 
 ### 4. 데이터베이스 설정
 
 PostgreSQL 설치 및 데이터베이스 생성
+```SQL
 createdb hospital_power
+```
 
-필요시 환경 변수 설정
+```bash
+# 필요시 환경 변수 설정
 export DB_HOST=localhost
 export DB_USER=postgres
 export DB_PASSWORD=your_password
 export DB_NAME=hospital_power
-
+```
 
 ### 5. 프로그램 실행
 
+```bash
 python main.py
+```
 
 ---
 
@@ -61,14 +68,15 @@ USE_DUMMY_MODE = True # 가상 데이터로 테스트
 
 ### 실제 장치 연동
 
-main.py에서
+```bash
+# main.py에서
 USE_DUMMY_MODE = False # 실제 장치와 연동
 
-UI에서 병원 추가
-병원명: 인천병원
-HMI IP: 192.168.1.100
-포트: 502
-
+# UI에서 병원 추가
+# 병원명: 인천병원
+# HMI IP: 192.168.1.100
+# 포트: 502
+```
 
 ### CSV 내보내기
 
@@ -93,17 +101,19 @@ HMI IP: 192.168.1.100
 
 ### requirements.txt
 
+```txt
 PyQt6==6.6.1
 psycopg2-binary==2.9.9
 pymodbus==3.5.0
 python-dotenv==1.0.0
-
+```
 ---
 
 ## 📝 설정 파일
 
 ### .env (선택사항)
 
+```bash
 DB_HOST=localhost
 DB_USER=postgres
 DB_PASSWORD=password
@@ -112,7 +122,7 @@ DB_PORT=5432
 
 MODBUS_TIMEOUT=5
 MODBUS_RETRY=3
-
+```
 ---
 
 ## 🐛 문제 해결
@@ -120,24 +130,26 @@ MODBUS_RETRY=3
 ### 데이터베이스 연결 오류
 
 PostgreSQL 상태 확인
+```bash
 sudo systemctl status postgresql
 
-데이터베이스 초기화
+# 데이터베이스 초기화
 dropdb hospital_power
 createdb hospital_power
-
+```
 ---
 
 ## 📦 PyInstaller로 .exe 생성
 
-설치
+```bash
+# 설치
 pip install pyinstaller
 
-.exe 생성
+# .exe 생성
 pyinstaller --onefile --windowed --name "병원전력량모니터링" main.py
-
-실행 파일 위치
-dist/병원전력량모니터링.exe
+```
+- 실행 파일 위치
+- dist/병원전력량모니터링.exe
 
 ---
 
