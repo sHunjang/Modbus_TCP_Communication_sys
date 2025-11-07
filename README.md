@@ -12,8 +12,8 @@
 
 ### ✨ 주요 기능
 
-- ✅ **실시간 모니터링** - 3개 이상의 병원 동시 모니터링
-- ✅ **Modbus TCP** - 산업용 전력량계와 통신
+- ✅ **실시간 모니터링** - (초기)3개 이상의 병원 동시 모니터링
+- ✅ **Modbus TCP** - 산업용 전력량계와 통신 (3상 4선의 전체 전력량만 통신하여 저장함)
 - ✅ **데이터 수집** - 1분 단위 데이터 수집 및 집계
 - ✅ **CSV 내보내기** - 기간 선택 후 데이터 내보내기
 - ✅ **데이터베이스** - PostgreSQL/TimescaleDB 저장
@@ -63,8 +63,9 @@ python main.py
 ### 더미 모드 (테스트)
 
 main.py에서
+```bash
 USE_DUMMY_MODE = True # 가상 데이터로 테스트
-
+```
 
 ### 실제 장치 연동
 
@@ -72,10 +73,10 @@ USE_DUMMY_MODE = True # 가상 데이터로 테스트
 # main.py에서
 USE_DUMMY_MODE = False # 실제 장치와 연동
 
-# UI에서 병원 추가
+# UI에서 병원 추가 (예시임)
 # 병원명: 인천병원
 # HMI IP: 192.168.1.100
-# 포트: 502
+# 포트: 8000
 ```
 
 ### CSV 내보내기
@@ -134,8 +135,8 @@ PostgreSQL 상태 확인
 sudo systemctl status postgresql
 
 # 데이터베이스 초기화
-dropdb hospital_power
-createdb hospital_power
+dropdb hospitals
+createdb hospitals
 ```
 ---
 
@@ -160,5 +161,3 @@ pyinstaller --onefile --windowed --name "병원전력량모니터링" main.py
 - [PostgreSQL 문서](https://www.postgresql.org/docs/)
 
 ---
-
-**마지막 업데이트**: 2025-10-30
