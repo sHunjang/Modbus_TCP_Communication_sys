@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
 # main.py
+
 """
-병원 전력량 모니터링 시스템 (CSV 내보내기 기능 포함)
-- 병원 추가/삭제 기능
-- 큰 글자 (16pt~)
-- 흰색 배경
-- 현재 시간 표시 (우측 상단)
+병원 전력량 모니터링 시스템 (전체전력량만 표시)
+- 병원 추가/삭제
+- 전체전력량(total_energy)만 표시
 - CSV 데이터 내보내기
+- DB 저장 (PostgreSQL)
 """
 
 import sys
@@ -15,8 +15,6 @@ from PyQt6.QtWidgets import *
 from PyQt6.QtCore import *
 from PyQt6.QtGui import *
 from datetime import datetime, timedelta
-from PyQt6.QtCore import QObject, pyqtSignal, pyqtSlot
-
 from core.database import DatabaseManager
 from core.modbus_thread import ModbusThread
 from core.data_aggregator import DataAggregator
@@ -28,43 +26,39 @@ from core.dummy_modbus_server import create_dummy_server, stop_all_dummy_servers
 # 병원 모니터 클래스
 # ============================================================
 
-from PyQt6.QtCore import QObject, pyqtSignal, pyqtSlot
-
-# ★ QObject 상속 추가!
 class HospitalMonitor(QObject):
-    """병원 모니터링"""
+    """병원 모니터링 (전체전력량만)"""
     
-    # ★ 신호 정의 (필요시 사용)
     data_updated = pyqtSignal(str, dict)
     
     def __init__(self, hospital_info, database, use_dummy=False):
         """초기화"""
-        super().__init__()  # ★ 부모 클래스 초기화 필수!
-        
+        super().__init__()
         self.hospital_info = hospital_info
         self.database = database
         self.hospital_name = hospital_info['hospital_name']
         self.table_name = hospital_info['table_name']
-
-        # 더미 서버 생성
+        
+        # 더미 서버 생성 (더미 모드일 때)
         if use_dummy:
             try:
                 create_dummy_server(self.hospital_name, port=5020 + hash(self.hospital_name) % 100)
             except:
                 pass
-
+        
+        # 데이터 집계기
         self.aggregator = DataAggregator(self.hospital_name)
-
-        # Modbus 스레드
+        
+        # Modbus TCP 통신 스레드
         self.modbus_thread = ModbusThread(
             hospital_name=self.hospital_name,
             hmi_ip=hospital_info['hmi_ip'],
             port=hospital_info['port'],
-            unit_id=hospital_info['unit_id'],
+            unit_id=hospital_info.get('unit_id', 128),
             meter_type=hospital_info.get('meter_type', '3P4W'),
             use_dummy=use_dummy
         )
-
+        
         # DB 저장 스레드
         self.db_writer = DBWriterThread(
             database=self.database,
@@ -72,63 +66,44 @@ class HospitalMonitor(QObject):
             table_name=self.table_name,
             hospital_name=self.hospital_name
         )
-
-        self.latest_energy = None
-
+        
+        # 최신 전체전력량
+        self.latest_total_energy = None
+    
     def start(self):
         """모니터링 시작"""
-        # ★ 신호 연결 (이제 on_data_received가 QObject 메서드이므로 정상 작동)
         self.modbus_thread.data_received.connect(self.on_data_received)
         self.modbus_thread.start()
         self.db_writer.start()
-
+    
     def stop(self):
         """모니터링 중지"""
         self.modbus_thread.stop()
         self.modbus_thread.wait()
         self.db_writer.stop()
         self.db_writer.wait()
-
-    @pyqtSlot(dict)  # ★ PyQt 슬롯 데코레이터 필수!
+    
+    @pyqtSlot(dict)
     def on_data_received(self, data_dict):
         """
-        데이터 수신 (3상 전체 저장)
-        
+        데이터 수신 (전체전력량만)
         Args:
             data_dict: {
-                "meter_type": "3P4W",
-                "voltage_l1": 230.5,
-                "current_l1": 10.5,
-                "power_l1": 20000,
-                "energy_l1": 30000,
-                "voltage_l2": 231.2,
-                "current_l2": 11.2,
-                "power_l2": 21000,
-                "energy_l2": 30001,
-                "voltage_l3": 229.8,
-                "current_l3": 9.8,
-                "power_l3": 19000,
-                "energy_l3": 30002,
-                "timestamp": "2025-11-05 15:20:24"
+                "total_energy": 654321,
+                "timestamp": "2025-11-07 17:05:00"
             }
         """
         try:
             if isinstance(data_dict, dict):
-                # ★ 전체 dict를 그대로 집계기에 전달
+                # 집계기에 데이터 전달
                 self.aggregator.add_data(data_dict)
                 
-                # 최신 에너지 값 저장 (L1 기준)
-                if 'energy_l1' in data_dict:
-                    self.latest_energy = data_dict['energy_l1']
-                elif 'energy' in data_dict:
-                    self.latest_energy = data_dict['energy']
-            else:
-                print(f"❌ 잘못된 데이터 타입: {type(data_dict)}")
-                
+                # 최신 전체전력량 저장
+                if 'total_energy' in data_dict:
+                    self.latest_total_energy = data_dict['total_energy']
+        
         except Exception as e:
             print(f"❌ on_data_received 오류: {e}")
-
-            
 
 
 # ============================================================
@@ -143,16 +118,20 @@ class CSVExporter:
         self.export_dir = export_dir
         os.makedirs(self.export_dir, exist_ok=True)
     
-    def export_hospital_data(self, database, table_name, hospital_name, 
+    def export_hospital_data(self, database, table_name, hospital_name,
                             start_datetime, end_datetime):
         """병원 데이터를 CSV로 내보내기"""
         try:
+            # DB 연결 확인
+            if not database.db_available:
+                return False, None, "DB 연결 없음"
+            
             # DB에서 데이터 조회
             conn = database.get_connection()
             cursor = conn.cursor()
             
             query = f"""
-                SELECT 
+                SELECT
                     time,
                     energy_kwh_avg,
                     energy_kwh_max,
@@ -160,13 +139,12 @@ class CSVExporter:
                     sample_count,
                     status
                 FROM {table_name}
-                WHERE time >= %s AND time <= %s
+                WHERE time >= %s AND time <= %s AND phase = 'TOTAL'
                 ORDER BY time ASC
             """
             
             cursor.execute(query, (start_datetime, end_datetime))
             rows = cursor.fetchall()
-            
             cursor.close()
             database.release_connection(conn)
             
@@ -187,9 +165,9 @@ class CSVExporter:
                 # 헤더
                 writer.writerow([
                     "시간",
-                    "평균 전력량 (kWh)",
-                    "최대 전력량 (kWh)",
-                    "최소 전력량 (kWh)",
+                    "평균 전체전력량 (kWh)",
+                    "최대 전체전력량 (kWh)",
+                    "최소 전체전력량 (kWh)",
                     "샘플 수",
                     "상태"
                 ])
@@ -212,16 +190,14 @@ class CSVExporter:
             avg_energy = total_energy / data_count if data_count > 0 else 0
             
             message = f"{hospital_name} 데이터 {data_count}건 내보냄 (평균: {avg_energy:.2f} kWh)"
-            
             return True, filepath, message
         
         except Exception as e:
             return False, None, f"CSV 내보내기 오류: {e}"
     
-    def export_all_hospitals(self, database, hospitals_info, 
+    def export_all_hospitals(self, database, hospitals_info,
                             start_datetime, end_datetime):
         """모든 병원 데이터를 CSV로 내보내기"""
-        
         results = []
         filepaths = []
         
@@ -250,7 +226,6 @@ class MainWindow(QMainWindow):
     
     def __init__(self, use_dummy=False):
         super().__init__()
-        
         self.use_dummy = use_dummy
         self.database = DatabaseManager()
         self.hospital_monitors = {}
@@ -259,7 +234,6 @@ class MainWindow(QMainWindow):
         
         # 테이블 초기화
         self.hospital_table.setRowCount(0)
-        
         self.load_hospitals()
         
         # 시간 갱신 타이머
@@ -275,8 +249,8 @@ class MainWindow(QMainWindow):
     
     def init_ui(self):
         """UI 초기화"""
-        self.setWindowTitle("🏥 병원 전력량 모니터링 시스템")
-        self.setGeometry(100, 50, 1200, 1000)
+        self.setWindowTitle("🏥 병원 전체전력량 모니터링 시스템")
+        self.setGeometry(100, 50, 1200, 900)
         
         # 흰색 배경
         self.setStyleSheet("QMainWindow { background-color: white; }")
@@ -292,7 +266,7 @@ class MainWindow(QMainWindow):
         # ===== 상단: 제목 + 시간 =====
         header_layout = QHBoxLayout()
         
-        title_label = QLabel("🏥 병원 전력량 모니터링 시스템")
+        title_label = QLabel("🏥 병원 전체전력량 모니터링 시스템")
         title_font = title_label.font()
         title_font.setPointSize(20)
         title_font.setBold(True)
@@ -321,15 +295,15 @@ class MainWindow(QMainWindow):
         main_layout.addWidget(self.create_log_section(), stretch=1)
         
         self.statusBar().showMessage("준비")
-        
         status_font = self.statusBar().font()
         status_font.setPointSize(12)
         self.statusBar().setFont(status_font)
     
     def create_export_section(self):
-        """CSV 저장 섹션"""
+        """CSV 내보내기 섹션"""
         group = QGroupBox("📥 데이터 저장 (CSV)")
         group.setStyleSheet("QGroupBox { font-size: 13pt; font-weight: bold; }")
+        
         layout = QHBoxLayout()
         
         # 시작 날짜/시간
@@ -372,22 +346,22 @@ class MainWindow(QMainWindow):
             }
         """)
         layout.addWidget(export_btn)
-        
         layout.addStretch()
-        group.setLayout(layout)
         
+        group.setLayout(layout)
         return group
     
     def create_add_hospital_section(self):
         """병원 추가 섹션"""
         group = QGroupBox("➕ 병원 추가")
         group.setStyleSheet("QGroupBox { font-size: 13pt; font-weight: bold; }")
+        
         layout = QHBoxLayout()
         
         # 병원명
         layout.addWidget(self.create_label("병원명:"))
         self.hospital_name_input = QLineEdit()
-        self.hospital_name_input.setPlaceholderText("지역+병원 입력하시오.")
+        self.hospital_name_input.setPlaceholderText("지역+병원 입력")
         self.hospital_name_input.setMinimumHeight(35)
         font = self.hospital_name_input.font()
         font.setPointSize(11)
@@ -397,7 +371,7 @@ class MainWindow(QMainWindow):
         # HMI IP
         layout.addWidget(self.create_label("HMI IP:"))
         self.hmi_ip_input = QLineEdit()
-        self.hmi_ip_input.setPlaceholderText("ex: 192.168.1.100")
+        self.hmi_ip_input.setPlaceholderText("ex: 192.168.0.6")
         self.hmi_ip_input.setMinimumHeight(35)
         self.hmi_ip_input.setFont(font)
         layout.addWidget(self.hmi_ip_input)
@@ -406,7 +380,7 @@ class MainWindow(QMainWindow):
         layout.addWidget(self.create_label("포트:"))
         self.port_input = QSpinBox()
         self.port_input.setRange(1, 65535)
-        self.port_input.setValue(502)  # 기본값 추가!
+        self.port_input.setValue(8000)  # 기본값
         self.port_input.setMinimumHeight(35)
         self.port_input.setFont(font)
         self.port_input.setMinimumWidth(80)
@@ -430,10 +404,9 @@ class MainWindow(QMainWindow):
             }
         """)
         layout.addWidget(add_btn)
-        
         layout.addStretch()
-        group.setLayout(layout)
         
+        group.setLayout(layout)
         return group
     
     def create_label(self, text):
@@ -448,12 +421,13 @@ class MainWindow(QMainWindow):
         """병원 테이블"""
         group = QGroupBox("📊 실시간 모니터링")
         group.setStyleSheet("QGroupBox { font-size: 13pt; font-weight: bold; }")
+        
         layout = QVBoxLayout()
         
         self.hospital_table = QTableWidget()
         self.hospital_table.setColumnCount(4)
         self.hospital_table.setHorizontalHeaderLabels([
-            "순서", "병원명", "전력량 (kWh)", " "
+            "순서", "병원명", "전체전력량 (kWh)", "액션"
         ])
         
         header = self.hospital_table.horizontalHeader()
@@ -465,7 +439,6 @@ class MainWindow(QMainWindow):
         table_font = self.hospital_table.font()
         table_font.setPointSize(12)
         self.hospital_table.setFont(table_font)
-        self.hospital_table.setRowHeight(0, 40)
         
         header_font = header.font()
         header_font.setPointSize(12)
@@ -479,23 +452,21 @@ class MainWindow(QMainWindow):
         
         layout.addWidget(self.hospital_table)
         group.setLayout(layout)
-        
         return group
     
     def create_log_section(self):
         """로그 섹션"""
         group = QGroupBox("📝 시스템 로그")
         group.setStyleSheet("QGroupBox { font-size: 13pt; font-weight: bold; }")
+        
         layout = QVBoxLayout()
         
         self.log_text = QPlainTextEdit()
         self.log_text.setReadOnly(True)
         self.log_text.setMaximumHeight(150)
-        
         log_font = self.log_text.font()
         log_font.setPointSize(10)
         self.log_text.setFont(log_font)
-        
         self.log_text.setStyleSheet("""
             QPlainTextEdit {
                 background-color: #f5f5f5;
@@ -506,7 +477,6 @@ class MainWindow(QMainWindow):
         
         layout.addWidget(self.log_text)
         group.setLayout(layout)
-        
         return group
     
     def export_to_csv(self):
@@ -529,8 +499,8 @@ class MainWindow(QMainWindow):
         
         try:
             exporter = CSVExporter(export_dir=export_dir)
+            hospitals = self.database.get_all_hospitals()
             
-            hospitals = self.database.get_hospitals()
             results, filepaths = exporter.export_all_hospitals(
                 self.database,
                 hospitals,
@@ -558,7 +528,7 @@ class MainWindow(QMainWindow):
                 self.add_log(f"⚠️ CSV 내보내기: 저장할 데이터 없음")
             
             QMessageBox.information(self, "내보내기 완료", message)
-            
+        
         except Exception as e:
             self.add_log(f"❌ CSV 내보내기 오류: {e}")
             QMessageBox.critical(self, "오류", f"CSV 내보내기 중 오류 발생:\n{e}")
@@ -586,28 +556,30 @@ class MainWindow(QMainWindow):
         
         table_name = f"{hospital_name.replace(' ', '_').lower()}_1min"
         
+        # DB에 병원 등록
         success = self.database.register_hospital(
             hospital_name=hospital_name,
             table_name=table_name,
             hmi_ip=hmi_ip,
             port=port,
-            unit_id=1,
+            unit_id=128,
             meter_type='3P4W'
         )
         
         if not success:
-            QMessageBox.critical(self, "DB 오류", "병원 등록에 실패했습니다")
-            return
+            self.add_log("⚠️ DB 등록 실패 (DB 없이 실행)")
         
+        # 병원 정보
         hospital_info = {
             'hospital_name': hospital_name,
             'table_name': table_name,
             'hmi_ip': hmi_ip,
             'port': port,
-            'unit_id': 1,
+            'unit_id': 128,
             'meter_type': '3P4W'
         }
         
+        # 모니터 생성 및 시작
         monitor = HospitalMonitor(hospital_info, self.database, use_dummy=self.use_dummy)
         monitor.modbus_thread.log_message.connect(self.add_log)
         monitor.db_writer.log_message.connect(self.add_log)
@@ -615,13 +587,14 @@ class MainWindow(QMainWindow):
         
         self.hospital_monitors[hospital_name] = monitor
         
+        # 테이블에 추가
         self.add_hospital_to_table(hospital_name)
         
+        # 입력 필드 초기화
         self.hospital_name_input.clear()
         self.hmi_ip_input.clear()
         
         self.add_log(f"✅ {hospital_name} 추가 완료")
-        QMessageBox.information(self, "성공", f"{hospital_name}이(가) 추가되었습니다")
     
     def add_hospital_to_table(self, hospital_name):
         """테이블에 병원 행 추가"""
@@ -637,8 +610,6 @@ class MainWindow(QMainWindow):
         self.hospital_table.insertRow(row)
         self.hospital_table.setRowHeight(row, 35)
         
-        monitor = self.hospital_monitors[hospital_name]
-        
         # 순서
         order_item = QTableWidgetItem(str(row + 1))
         order_item.setFont(self.get_table_font())
@@ -649,14 +620,13 @@ class MainWindow(QMainWindow):
         name_item.setFont(self.get_table_font())
         self.hospital_table.setItem(row, 1, name_item)
         
-        # 전력량
-        energy_item = QTableWidgetItem("0.00")
+        # 전체전력량
+        energy_item = QTableWidgetItem("0")
         energy_item.setFont(self.get_table_font())
         self.hospital_table.setItem(row, 2, energy_item)
         
-        # 액션 버튼
+        # 삭제 버튼
         btn_layout = QHBoxLayout()
-        
         delete_btn = QPushButton("🗑️ 삭제")
         delete_btn.setFont(self.get_table_font())
         delete_btn.clicked.connect(lambda: self.delete_hospital(hospital_name, row))
@@ -701,7 +671,7 @@ class MainWindow(QMainWindow):
         
         # 중복 방지
         if len(self.hospital_monitors) > 0:
-            self.add_log("⚠️ 이미 로드된 병원이 있습니다. 건너뜁니다.")
+            self.add_log("⚠️ 이미 로드된 병원이 있습니다.")
             return
         
         # DB가 비어있으면
@@ -711,10 +681,7 @@ class MainWindow(QMainWindow):
         
         # 각 병원 모니터 생성
         for hospital in hospitals:
-            
-            # 중복 체크
             if hospital['hospital_name'] in self.hospital_monitors:
-                self.add_log(f"⚠️ {hospital['hospital_name']}은 이미 로드되었습니다.")
                 continue
             
             monitor = HospitalMonitor(hospital, self.database, use_dummy=self.use_dummy)
@@ -724,7 +691,6 @@ class MainWindow(QMainWindow):
             
             self.hospital_monitors[hospital['hospital_name']] = monitor
             self.add_hospital_to_table(hospital['hospital_name'])
-            
             self.add_log(f"✅ {hospital['hospital_name']} 모니터링 시작")
     
     def update_display(self):
@@ -733,15 +699,13 @@ class MainWindow(QMainWindow):
             hospital_name = self.hospital_table.item(row, 1).text()
             monitor = self.hospital_monitors.get(hospital_name)
             
-            if monitor and monitor.latest_energy is not None:
-                energy_item = QTableWidgetItem(f"{monitor.latest_energy:.2f}")
+            if monitor and monitor.latest_total_energy is not None:
+                energy_item = QTableWidgetItem(f"{monitor.latest_total_energy:,}")
                 energy_item.setFont(self.get_table_font())
                 energy_item.setForeground(QColor(0, 120, 215))
-                
                 energy_font = energy_item.font()
                 energy_font.setBold(True)
                 energy_item.setFont(energy_font)
-                
                 self.hospital_table.setItem(row, 2, energy_item)
     
     def update_time(self):
@@ -759,7 +723,6 @@ class MainWindow(QMainWindow):
         """로그 추가"""
         timestamp = datetime.now().strftime("%H:%M:%S")
         self.log_text.appendPlainText(f"[{timestamp}] {message}")
-        
         scrollbar = self.log_text.verticalScrollBar()
         scrollbar.setValue(scrollbar.maximum())
     
@@ -774,10 +737,8 @@ class MainWindow(QMainWindow):
         
         if reply == QMessageBox.StandardButton.Yes:
             stop_all_dummy_servers()
-            
             for monitor in self.hospital_monitors.values():
                 monitor.stop()
-            
             self.database.close()
             event.accept()
         else:
@@ -791,7 +752,7 @@ class MainWindow(QMainWindow):
 def main():
     """메인 함수"""
     print("\n" + "="*60)
-    print("🏥 병원 전력량 모니터링 시스템 v1.0")
+    print("🏥 병원 전체전력량 모니터링 시스템 v1.0")
     print("="*60)
     print("📅 시작 시간:", datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
     print("="*60 + "\n")
@@ -804,8 +765,9 @@ def main():
         print("📡 실제 모드 실행 중... (HMI 통신)\n")
     
     app = QApplication(sys.argv)
-    
     app.setStyle('Fusion')
+    
+    # 색상 팔레트 설정
     palette = QPalette()
     palette.setColor(QPalette.ColorRole.Window, QColor(255, 255, 255))
     palette.setColor(QPalette.ColorRole.WindowText, QColor(0, 0, 0))
