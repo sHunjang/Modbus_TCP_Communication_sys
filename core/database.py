@@ -19,6 +19,7 @@ class DatabaseManager:
         """초기화"""
         self.config = self.load_config(config_file)
         self.connection_pool = None
+        self.db_available = False
         self.initialize_pool()
         
         # ★ setup_base_tables()를 여러 번 시도
@@ -45,7 +46,7 @@ class DatabaseManager:
             }
 
     def initialize_pool(self):
-        """연결 풀 초기화"""
+        """연결 풀 초기화""" 
         try:
             self.connection_pool = psycopg2.pool.SimpleConnectionPool(
                 1, 20,
@@ -56,8 +57,11 @@ class DatabaseManager:
                 password=self.config["password"],
                 sslmode=self.config.get("sslmode", "prefer")
             )
+            
+            self.db_available = True
             print(f"✅ DB 연결 완료: {self.config['host']}:{self.config['port']}/{self.config['dbname']}")
         except Exception as e:
+            self.db_available = False
             print(f"❌ DB 연결 오류: {e}")
 
     def setup_base_tables(self):

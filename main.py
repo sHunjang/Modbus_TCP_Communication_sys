@@ -99,7 +99,9 @@ class HospitalMonitor(QObject):
                 self.aggregator.add_data(data_dict)
                 
                 # 최신 전체전력량 저장
-                if 'total_energy' in data_dict:
+                if 'energy_total' in data_dict:
+                    self.latest_total_energy = data_dict['energy_total']
+                elif 'total_energy' in data_dict:
                     self.latest_total_energy = data_dict['total_energy']
         
         except Exception as e:
@@ -757,7 +759,7 @@ def main():
     print("📅 시작 시간:", datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
     print("="*60 + "\n")
     
-    USE_DUMMY_MODE = True
+    USE_DUMMY_MODE = False
     
     if USE_DUMMY_MODE:
         print("🔌 더미 모드 실행 중... (가상 데이터)\n")
