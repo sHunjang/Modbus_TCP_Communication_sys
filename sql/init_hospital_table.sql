@@ -98,12 +98,12 @@ CREATE INDEX IF NOT EXISTS idx_hospitals_name ON hospitals (hospital_name);
 -- ============================================================
 -- 초기 병원 등록 (기본 병원 3곳)
 -- ============================================================
-INSERT INTO hospitals (hospital_name, table_name, hmi_ip, port, unit_id)
-VALUES 
-    ('인천병원', '인천병원_1min', '192.168.0.100', 502, 1),
-    ('안산병원', '안산병원_1min', '192.168.0.101', 502, 1),
-    ('대구병원', '대구병원_1min', '192.168.0.102', 502, 1)
-ON CONFLICT (hospital_name) DO NOTHING;
+-- INSERT INTO hospitals (hospital_name, table_name, hmi_ip, port, unit_id)
+-- VALUES 
+--     ('인천병원', '인천병원_1min', '192.168.0.100', 502, 1),
+--     ('안산병원', '안산병원_1min', '192.168.0.101', 502, 1),
+--     ('대구병원', '대구병원_1min', '192.168.0.102', 502, 1)
+-- ON CONFLICT (hospital_name) DO NOTHING;
 
 -- ============================================================
 -- 병원 테이블 자동 생성
