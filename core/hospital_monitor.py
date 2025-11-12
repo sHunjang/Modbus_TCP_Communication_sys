@@ -1,3 +1,6 @@
+#!/usr/bin/env python3
+# core/hospital_monitor.py
+
 """
 병원 모니터링 클래스
 """
@@ -14,6 +17,10 @@ class HospitalMonitor(QObject):
     """병원 모니터링 (전체전력량만)"""
     
     data_updated = pyqtSignal(str, dict)
+    
+    # 연결 상태 시그널
+    connection_failed = pyqtSignal(str)  # 연결 실패 (병원명)
+    connection_restored = pyqtSignal(str)  # 연결 복구 (병원명)
     
     def __init__(self, hospital_info, database, use_dummy=False):
         """초기화"""
@@ -57,6 +64,11 @@ class HospitalMonitor(QObject):
     def start(self):
         """모니터링 시작"""
         self.modbus_thread.data_received.connect(self.on_data_received)
+        
+        # 연결 상태 시그널 연결
+        self.modbus_thread.connection_failed.connect(self.on_connection_failed)
+        self.modbus_thread.connection_restored.connect(self.on_connection_restored)
+        
         self.modbus_thread.start()
         self.db_writer.start()
     
@@ -69,20 +81,11 @@ class HospitalMonitor(QObject):
     
     @pyqtSlot(dict)
     def on_data_received(self, data_dict):
-        """
-        데이터 수신 (전체전력량만)
-        Args:
-            data_dict: {
-                "total_energy": 654321,
-                "timestamp": "2025-11-07 17:05:00"
-            }
-        """
+        """데이터 수신"""
         try:
             if isinstance(data_dict, dict):
-                # 집계기에 데이터 전달
                 self.aggregator.add_data(data_dict)
                 
-                # 최신 전체전력량 저장
                 if 'energy_total' in data_dict:
                     self.latest_total_energy = data_dict['energy_total']
                 elif 'total_energy' in data_dict:
@@ -90,3 +93,13 @@ class HospitalMonitor(QObject):
         
         except Exception as e:
             print(f"❌ on_data_received 오류: {e}")
+    
+    @pyqtSlot()
+    def on_connection_failed(self):
+        """연결 실패 (3번 재시도 후)"""
+        self.connection_failed.emit(self.hospital_name)
+    
+    @pyqtSlot()
+    def on_connection_restored(self):
+        """연결 복구"""
+        self.connection_restored.emit(self.hospital_name)

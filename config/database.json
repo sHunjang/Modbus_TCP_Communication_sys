@@ -2,7 +2,7 @@
     "description": "PostgreSQL + TimescaleDB 설정",
     "host": "localhost",
     "port": 5432,
-    "dbname": "hospital_power",
+    "dbname": "hospitals",
     "user": "postgres",
     "password": "1234",
     "sslmode": "prefer"

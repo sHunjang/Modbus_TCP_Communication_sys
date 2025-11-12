@@ -25,7 +25,11 @@ class ModbusThread(QThread):
     log_message = pyqtSignal(str)
     connection_status = pyqtSignal(bool)
     
-    def __init__(self, hospital_name, hmi_ip, port=502, unit_id=128,
+    # 연결 상태 시그널
+    connection_failed = pyqtSignal()  # 3번 재시도 후 실패
+    connection_restored = pyqtSignal()  # 연결 복구
+    
+    def __init__(self, hospital_name, hmi_ip, port=8000, unit_id=128,
                  meter_type="3P4W", use_dummy=False):
         """
         초기화
@@ -46,7 +50,13 @@ class ModbusThread(QThread):
         self.use_dummy = use_dummy
         self.running = False
         
-        # ✅ 추가: 통계 정보
+        # 연결 상태 추적
+        self.is_connected = False
+        self.consecutive_failures = 0
+        self.max_retries = 3
+        self.error_notified = False  # 알림 발신 여부
+        
+        # 통계 정보
         self.stats = {
             'success': 0,
             'failure': 0,
@@ -59,9 +69,9 @@ class ModbusThread(QThread):
                 host=hmi_ip,
                 port=port,
                 unit_id=unit_id,
-                timeout=2.0,
-                auto_open=True,      # ✅ 추가: 자동 연결
-                auto_close=False     # ✅ 추가: 연결 유지
+                timeout=3.0,
+                auto_open=True,
+                auto_close=False
             )
         else:
             self.client = None
@@ -71,46 +81,78 @@ class ModbusThread(QThread):
         self.running = True
         
         mode_str = "🔌 더미 모드" if self.use_dummy else f"📡 실제 통신 ({self.hmi_ip}:{self.port})"
-        self.log_message.emit(f"✅ {self.hospital_name} 시작 ({mode_str})")
+        self.log_message.emit(f"{self.hospital_name} 시작 ({mode_str})")
         self.connection_status.emit(True)
         
-        # ✅ 추가: 연결 실패 카운터
-        consecutive_failures = 0
-        max_failures = 3  # 연속 3회 실패 시 재연결
+        # 더미 모드는 항상 연결됨
+        if self.use_dummy:
+            self.is_connected = True
         
         while self.running:
             try:
                 data = self.read_total_energy()
                 
                 if data is not None:
+                    # 데이터 수신 성공
                     self.data_received.emit(data)
                     self.stats['success'] += 1
                     self.stats['last_success'] = datetime.now()
-                    consecutive_failures = 0  # ✅ 성공 시 카운터 리셋
+                    
+                    # 연결 복구 처리
+                    if not self.is_connected or self.consecutive_failures > 0:
+                        was_disconnected = not self.is_connected
+                        
+                        self.is_connected = True
+                        self.consecutive_failures = 0
+                        self.error_notified = False
+                        
+                        if was_disconnected:
+                            self.log_message.emit(f"{self.hospital_name}: ✅ 연결됨")
+                            self.connection_restored.emit()
+                
                 else:
+                    # 데이터 수신 실패
                     self.stats['failure'] += 1
-                    consecutive_failures += 1
+                    self.consecutive_failures += 1
                     
                     self.log_message.emit(
                         f"⚠️ {self.hospital_name} 전체전력량 읽기 실패 "
-                        f"({consecutive_failures}/{max_failures})"
+                        f"({self.consecutive_failures}/{self.max_retries})"
                     )
                     
-                    # ✅ 추가: 연속 실패 시 재연결
-                    if consecutive_failures >= max_failures and not self.use_dummy:
-                        self.log_message.emit(f"🔄 {self.hospital_name} 재연결 시도...")
-                        self.reconnect()
-                        consecutive_failures = 0
+                    # 정확히 3번째 실패 시 알림 (한 번만)
+                    if self.consecutive_failures == self.max_retries:
+                        if not self.error_notified:
+                            self.is_connected = False
+                            self.error_notified = True
+                            self.log_message.emit(f"🔴 {self.hospital_name}: 연결 실패 시그널 발신!")
+                            self.connection_failed.emit()
+                    
+                    # 재연결 시도 (3번 이상 실패 시)
+                    if self.consecutive_failures >= self.max_retries:
+                        if not self.use_dummy:
+                            self.log_message.emit(f"🔄 {self.hospital_name} 재연결 시도...")
+                            if self.reconnect():
+                                pass
                 
                 time.sleep(5)  # 5초 주기
-                
+            
             except Exception as e:
                 self.log_message.emit(f"❌ {self.hospital_name} 오류: {e}")
                 self.stats['failure'] += 1
-                consecutive_failures += 1
+                self.consecutive_failures += 1
+                
+                # 정확히 3번째 실패 시 알림 (한 번만)
+                if self.consecutive_failures == self.max_retries:
+                    if not self.error_notified:
+                        self.is_connected = False
+                        self.error_notified = True
+                        self.log_message.emit(f"🔴 {self.hospital_name}: 연결 실패 시그널 발신 (예외)")
+                        self.connection_failed.emit()
+                
                 time.sleep(5)
         
-        # ✅ 추가: 종료 시 연결 해제
+        # 종료 시 연결 해제
         if self.client and not self.use_dummy:
             try:
                 self.client.close()
@@ -126,12 +168,8 @@ class ModbusThread(QThread):
     def read_total_energy(self):
         """
         전체전력량만 읽기 (32비트)
-        
         Returns:
-            dict: {
-                "total_energy": 123456,
-                "timestamp": "2025-11-10 10:15:00"
-            }
+            dict: {"total_energy": 123456, "timestamp": "2025-11-12 15:00:00"}
         """
         try:
             if self.use_dummy:
@@ -143,19 +181,18 @@ class ModbusThread(QThread):
                 }
             
             else:
-                # ✅ 추가: 연결 확인
+                # 연결 확인
                 if not self.client.is_open:
                     if not self.client.open():
                         return None
                 
-                # 실제 모드: Modbus TCP 통신
                 # 전체전력량 주소: 0x0404 (2개 레지스터, 32비트)
                 total_energy_addr = 0x0404
                 
                 # 32비트 읽기
                 regs = self.client.read_holding_registers(
                     reg_addr=total_energy_addr,
-                    reg_nb=2  # 2개 레지스터
+                    reg_nb=2
                 )
                 
                 if not regs or len(regs) < 2:
@@ -170,19 +207,17 @@ class ModbusThread(QThread):
                     "total_energy": total_energy,
                     "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                 }
-                
+        
         except Exception as e:
-            self.log_message.emit(f"❌ {self.hospital_name} 전체전력량 읽기 오류: {e}")
             return None
     
     def reconnect(self):
-        """
-        ✅ 추가: 재연결 시도
-        """
+        """재연결 시도"""
         try:
             if self.client:
                 self.client.close()
                 time.sleep(1)
+                
                 if self.client.open():
                     self.log_message.emit(f"✅ {self.hospital_name} 재연결 성공")
                     return True
@@ -194,9 +229,7 @@ class ModbusThread(QThread):
             return False
     
     def get_stats(self):
-        """
-        ✅ 추가: 통계 정보 반환
-        """
+        """통계 정보 반환"""
         return self.stats.copy()
     
     def stop(self):

@@ -1,3 +1,6 @@
+#!/usr/bin/env python3
+# ui/main_window.py
+
 """
 메인 윈도우 UI
 """
@@ -24,6 +27,12 @@ class MainWindow(QMainWindow):
         self.database = database
         self.hospital_monitors = {}
         
+        # IP와 포트 정보를 저장할 딕셔너리
+        self.hospital_info_map = {}
+        
+        # 연결 오류 알림창 관리
+        self.error_dialogs = {}
+        
         self.init_ui()
         
         # 테이블 초기화
@@ -46,7 +55,6 @@ class MainWindow(QMainWindow):
         self.setWindowTitle("🏥 병원 전체전력량 모니터링 시스템")
         self.setGeometry(100, 50, 1200, 900)
         
-        # 흰색 배경
         self.setStyleSheet("QMainWindow { background-color: white; }")
         
         central_widget = QWidget()
@@ -57,7 +65,7 @@ class MainWindow(QMainWindow):
         main_layout.setContentsMargins(20, 20, 20, 20)
         main_layout.setSpacing(15)
         
-        # ===== 상단: 제목 + 시간 =====
+        # 상단: 제목 + 시간
         header_layout = QHBoxLayout()
         
         title_label = QLabel("🏥 병원 전체전력량 모니터링 시스템")
@@ -76,16 +84,16 @@ class MainWindow(QMainWindow):
         
         main_layout.addLayout(header_layout)
         
-        # ===== CSV 내보내기 섹션 =====
+        # CSV 내보내기 섹션
         main_layout.addWidget(self.create_export_section())
         
-        # ===== 병원 추가 섹션 =====
+        # 병원 추가 섹션
         main_layout.addWidget(self.create_add_hospital_section())
         
-        # ===== 중단: 테이블 =====
+        # 중단: 테이블
         main_layout.addWidget(self.create_hospital_table(), stretch=3)
         
-        # ===== 하단: 로그 =====
+        # 하단: 로그
         main_layout.addWidget(self.create_log_section(), stretch=1)
         
         self.statusBar().showMessage("준비")
@@ -100,7 +108,6 @@ class MainWindow(QMainWindow):
         
         layout = QHBoxLayout()
         
-        # 시작 날짜/시간
         layout.addWidget(self.create_label("시작:"))
         self.start_datetime = QDateTimeEdit()
         self.start_datetime.setDateTime(QDateTime.currentDateTime().addDays(-7))
@@ -112,7 +119,6 @@ class MainWindow(QMainWindow):
         self.start_datetime.setFont(font)
         layout.addWidget(self.start_datetime)
         
-        # 종료 날짜/시간
         layout.addWidget(self.create_label("종료:"))
         self.end_datetime = QDateTimeEdit()
         self.end_datetime.setDateTime(QDateTime.currentDateTime())
@@ -122,7 +128,6 @@ class MainWindow(QMainWindow):
         self.end_datetime.setFont(font)
         layout.addWidget(self.end_datetime)
         
-        # 내보내기 버튼
         export_btn = QPushButton("📥 CSV 저장")
         export_btn.clicked.connect(self.export_to_csv)
         export_btn.setMinimumHeight(35)
@@ -141,7 +146,6 @@ class MainWindow(QMainWindow):
         
         layout = QHBoxLayout()
         
-        # 병원명
         layout.addWidget(self.create_label("병원명:"))
         self.hospital_name_input = QLineEdit()
         self.hospital_name_input.setPlaceholderText("지역+병원 입력")
@@ -151,15 +155,13 @@ class MainWindow(QMainWindow):
         self.hospital_name_input.setFont(font)
         layout.addWidget(self.hospital_name_input)
         
-        # HMI IP
-        layout.addWidget(self.create_label("HMI IP:"))
+        layout.addWidget(self.create_label("병원 IP:"))
         self.hmi_ip_input = QLineEdit()
-        self.hmi_ip_input.setPlaceholderText("ex: 192.168.0.6")
+        self.hmi_ip_input.setPlaceholderText("ex: 14.42.209.171")
         self.hmi_ip_input.setMinimumHeight(35)
         self.hmi_ip_input.setFont(font)
         layout.addWidget(self.hmi_ip_input)
         
-        # 포트
         layout.addWidget(self.create_label("포트:"))
         self.port_input = QSpinBox()
         self.port_input.setRange(1, 65535)
@@ -169,7 +171,6 @@ class MainWindow(QMainWindow):
         self.port_input.setMinimumWidth(80)
         layout.addWidget(self.port_input)
         
-        # 추가 버튼
         add_btn = QPushButton("➕ 추가")
         add_btn.clicked.connect(self.add_hospital)
         add_btn.setMinimumHeight(35)
@@ -199,7 +200,7 @@ class MainWindow(QMainWindow):
         self.hospital_table = QTableWidget()
         self.hospital_table.setColumnCount(4)
         self.hospital_table.setHorizontalHeaderLabels([
-            "순서", "병원명", "전체전력량 (kWh)", "액션"
+            "순서", "병원명 (IP주소:포트)", "전체전력량 (kWh)", "액션"
         ])
         
         header = self.hospital_table.horizontalHeader()
@@ -244,7 +245,7 @@ class MainWindow(QMainWindow):
         layout.addWidget(self.log_text)
         group.setLayout(layout)
         return group
-    
+
     def export_to_csv(self):
         """CSV로 내보내기"""
         start_dt = self.start_datetime.dateTime().toPyDateTime()
@@ -313,7 +314,7 @@ class MainWindow(QMainWindow):
             return
         
         if not hmi_ip:
-            QMessageBox.warning(self, "입력 오류", "HMI IP를 입력하세요")
+            QMessageBox.warning(self, "입력 오류", "IP 주소를 입력하세요")
             return
         
         if hospital_name in self.hospital_monitors:
@@ -322,7 +323,6 @@ class MainWindow(QMainWindow):
         
         table_name = f"{hospital_name.replace(' ', '_').lower()}_1min"
         
-        # DB에 병원 등록
         success = self.database.register_hospital(
             hospital_name=hospital_name,
             table_name=table_name,
@@ -335,7 +335,6 @@ class MainWindow(QMainWindow):
         if not success:
             self.add_log("⚠️ DB 등록 실패 (DB 없이 실행)")
         
-        # 병원 정보
         hospital_info = {
             'hospital_name': hospital_name,
             'table_name': table_name,
@@ -345,30 +344,33 @@ class MainWindow(QMainWindow):
             'meter_type': '3P4W'
         }
         
-        # 모니터 생성 및 시작
+        self.hospital_info_map[hospital_name] = {
+            "ip": hmi_ip,
+            "port": port
+        }
+        
         monitor = HospitalMonitor(hospital_info, self.database, use_dummy=self.use_dummy)
         monitor.modbus_thread.log_message.connect(self.add_log)
         monitor.db_writer.log_message.connect(self.add_log)
+        monitor.connection_failed.connect(self.show_connection_error)
+        monitor.connection_restored.connect(self.hide_connection_error)
         monitor.start()
         
         self.hospital_monitors[hospital_name] = monitor
+        self.add_hospital_to_table(hospital_name, hmi_ip, port)
         
-        # 테이블에 추가
-        self.add_hospital_to_table(hospital_name)
-        
-        # 입력 필드 초기화
         self.hospital_name_input.clear()
         self.hmi_ip_input.clear()
         
         self.add_log(f"✅ {hospital_name} 추가 완료")
     
-    def add_hospital_to_table(self, hospital_name):
+    def add_hospital_to_table(self, hospital_name, hmi_ip, port):
         """테이블에 병원 행 추가"""
         row = self.hospital_table.rowCount()
         
-        # 중복 체크
         for r in range(row):
-            existing_name = self.hospital_table.item(r, 1).text()
+            existing_text = self.hospital_table.item(r, 1).text()
+            existing_name = existing_text.split(" (")[0] if " (" in existing_text else existing_text
             if existing_name == hospital_name:
                 self.add_log(f"⚠️ {hospital_name}은 이미 테이블에 있습니다.")
                 return
@@ -376,22 +378,19 @@ class MainWindow(QMainWindow):
         self.hospital_table.insertRow(row)
         self.hospital_table.setRowHeight(row, 35)
         
-        # 순서
         order_item = QTableWidgetItem(str(row + 1))
         order_item.setFont(self.get_table_font())
         self.hospital_table.setItem(row, 0, order_item)
         
-        # 병원명
-        name_item = QTableWidgetItem(hospital_name)
+        display_name = f"{hospital_name} ({hmi_ip}:{port})"
+        name_item = QTableWidgetItem(display_name)
         name_item.setFont(self.get_table_font())
         self.hospital_table.setItem(row, 1, name_item)
         
-        # 전체전력량
         energy_item = QTableWidgetItem("0")
         energy_item.setFont(self.get_table_font())
         self.hospital_table.setItem(row, 2, energy_item)
         
-        # 삭제 버튼
         btn_layout = QHBoxLayout()
         delete_btn = QPushButton("🗑️ 삭제")
         delete_btn.setFont(self.get_table_font())
@@ -418,51 +417,113 @@ class MainWindow(QMainWindow):
                 monitor.stop()
                 del self.hospital_monitors[hospital_name]
             
+            if hospital_name in self.hospital_info_map:
+                del self.hospital_info_map[hospital_name]
+            
+            if hospital_name in self.error_dialogs:
+                self.error_dialogs[hospital_name].close()
+                del self.error_dialogs[hospital_name]
+            
             self.hospital_table.removeRow(row)
             self.add_log(f"🗑️ {hospital_name} 삭제됨")
     
     def load_hospitals(self):
         """DB에서 병원 목록 로드"""
+        if not self.database.db_available:
+            self.add_log("⚠️ DB 연결 없음: UI에서 병원을 추가해주세요")
+            return
+        
         hospitals = self.database.get_hospitals()
         
-        # 중복 방지
         if len(self.hospital_monitors) > 0:
             self.add_log("⚠️ 이미 로드된 병원이 있습니다.")
             return
         
-        # DB가 비어있으면
         if len(hospitals) == 0:
             self.add_log("📝 DB가 비어있습니다. UI에서 병원을 추가해주세요.")
             return
         
-        # 각 병원 모니터 생성
         for hospital in hospitals:
             if hospital['hospital_name'] in self.hospital_monitors:
                 continue
             
+            self.hospital_info_map[hospital['hospital_name']] = {
+                "ip": hospital['hmi_ip'],
+                "port": hospital['port']
+            }
+            
             monitor = HospitalMonitor(hospital, self.database, use_dummy=self.use_dummy)
             monitor.modbus_thread.log_message.connect(self.add_log)
             monitor.db_writer.log_message.connect(self.add_log)
+            monitor.connection_failed.connect(self.show_connection_error)
+            monitor.connection_restored.connect(self.hide_connection_error)
             monitor.start()
             
             self.hospital_monitors[hospital['hospital_name']] = monitor
-            self.add_hospital_to_table(hospital['hospital_name'])
+            self.add_hospital_to_table(
+                hospital['hospital_name'],
+                hospital['hmi_ip'],
+                hospital['port']
+            )
             self.add_log(f"✅ {hospital['hospital_name']} 모니터링 시작")
     
     def update_display(self):
         """화면 갱신"""
         for row in range(self.hospital_table.rowCount()):
-            hospital_name = self.hospital_table.item(row, 1).text()
+            display_text = self.hospital_table.item(row, 1).text()
+            hospital_name = display_text.split(" (")[0] if " (" in display_text else display_text
+            
             monitor = self.hospital_monitors.get(hospital_name)
             
             if monitor and monitor.latest_total_energy is not None:
-                energy_item = QTableWidgetItem(f"{monitor.latest_total_energy:,}")
+                energy_kwh = monitor.latest_total_energy / 1000.0
+                
+                energy_item = QTableWidgetItem(f"{energy_kwh:,.2f}")
                 energy_item.setFont(self.get_table_font())
                 energy_item.setForeground(QColor(0, 120, 215))
                 energy_font = energy_item.font()
                 energy_font.setBold(True)
                 energy_item.setFont(energy_font)
                 self.hospital_table.setItem(row, 2, energy_item)
+    
+    @pyqtSlot(str)
+    def show_connection_error(self, hospital_name):
+        """연결 오류 알림창 표시"""
+        if hospital_name in self.error_dialogs:
+            return
+        
+        ip = self.hospital_info_map.get(hospital_name, {}).get('ip', '알 수 없음')
+        port = self.hospital_info_map.get(hospital_name, {}).get('port', '알 수 없음')
+        
+        msg_box = QMessageBox(self)
+        msg_box.setIcon(QMessageBox.Icon.Warning)
+        msg_box.setWindowTitle("⚠️ 연결 오류")
+        msg_box.setText(f"<h2>❌ {hospital_name}</h2>")
+        msg_box.setInformativeText(
+            f"<p style='font-size: 12pt;'>"
+            f"<b>연결에 실패했습니다.</b><br>"
+            f"3번 재시도 후에도 연결되지 않았습니다.<br><br>"
+            f"<b>IP 주소:</b> {ip}<br>"
+            f"<b>포트:</b> {port}<br><br>"
+            f"<span style='color: green;'>✅ 연결이 복구되면 자동으로 닫힙니다.</span>"
+            f"</p>"
+        )
+        msg_box.setStandardButtons(QMessageBox.StandardButton.Ok)
+        msg_box.setModal(False)
+        msg_box.setWindowFlags(msg_box.windowFlags() | Qt.WindowType.WindowStaysOnTopHint)
+        
+        self.error_dialogs[hospital_name] = msg_box
+        msg_box.show()
+        
+        self.add_log(f"🚨 {hospital_name}: 연결 오류 알림 표시")
+    
+    @pyqtSlot(str)
+    def hide_connection_error(self, hospital_name):
+        """연결 복구 시 알림창 닫기"""
+        if hospital_name in self.error_dialogs:
+            self.error_dialogs[hospital_name].close()
+            del self.error_dialogs[hospital_name]
+            self.add_log(f"✅ {hospital_name}: 연결 복구 (알림창 자동 닫힘)")
     
     def update_time(self):
         """현재 시간 업데이트"""
@@ -496,6 +557,10 @@ class MainWindow(QMainWindow):
             for monitor in self.hospital_monitors.values():
                 monitor.stop()
             self.database.close()
+            
+            for dialog in self.error_dialogs.values():
+                dialog.close()
+            
             event.accept()
         else:
             event.ignore()
