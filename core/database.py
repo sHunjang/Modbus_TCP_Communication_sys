@@ -275,3 +275,93 @@ class DatabaseManager:
         if self.connection_pool:
             self.connection_pool.closeall()
             print("✅ DB 연결 풀 종료")
+
+
+    def delete_hospital(self, hospital_name):
+        """
+        병원 삭제 (hospitals 테이블에서만 삭제, 데이터 테이블은 유지)
+        Args:
+            hospital_name: 병원명
+        Returns:
+            bool: 성공 여부
+        """
+        conn = None
+        try:
+            conn = self.get_connection()
+            if not conn:
+                return False
+            
+            cursor = conn.cursor()
+            
+            # hospitals 테이블에서 병원 삭제
+            cursor.execute(
+                "DELETE FROM hospitals WHERE hospital_name = %s",
+                (hospital_name,)
+            )
+            
+            deleted_count = cursor.rowcount
+            conn.commit()
+            cursor.close()
+            self.release_connection(conn)
+            
+            if deleted_count > 0:
+                print(f"✅ DB에서 {hospital_name} 삭제 완료")
+                return True
+            else:
+                print(f"⚠️ DB에 {hospital_name}이(가) 없습니다")
+                return False
+        
+        except Exception as e:
+            if conn:
+                try:
+                    conn.rollback()
+                except:
+                    pass
+                self.release_connection(conn)
+            
+            print(f"❌ DB 삭제 오류: {e}")
+            return False
+    
+    def delete_hospital_with_data(self, hospital_name, table_name):
+        """
+        병원 및 데이터 완전 삭제 (hospitals 테이블 + 데이터 테이블)
+        Args:
+            hospital_name: 병원명
+            table_name: 테이블명
+        Returns:
+            bool: 성공 여부
+        """
+        conn = None
+        try:
+            conn = self.get_connection()
+            if not conn:
+                return False
+            
+            cursor = conn.cursor()
+            
+            # 1. hospitals 테이블에서 병원 삭제
+            cursor.execute(
+                "DELETE FROM hospitals WHERE hospital_name = %s",
+                (hospital_name,)
+            )
+            
+            # 2. 데이터 테이블 삭제 (선택사항)
+            cursor.execute(f"DROP TABLE IF EXISTS {table_name} CASCADE")
+            
+            conn.commit()
+            cursor.close()
+            self.release_connection(conn)
+            
+            print(f"✅ DB에서 {hospital_name} 및 데이터 테이블 완전 삭제")
+            return True
+        
+        except Exception as e:
+            if conn:
+                try:
+                    conn.rollback()
+                except:
+                    pass
+                self.release_connection(conn)
+            
+            print(f"❌ DB 완전 삭제 오류: {e}")
+            return False

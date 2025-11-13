@@ -52,7 +52,7 @@ class MainWindow(QMainWindow):
     
     def init_ui(self):
         """UI 초기화"""
-        self.setWindowTitle("🏥 병원 전체전력량 모니터링 시스템")
+        self.setWindowTitle("🏥 병원 전체전력량 모니터링 시스템 Version 1.0 (251113)")
         self.setGeometry(100, 50, 1200, 900)
         
         self.setStyleSheet("QMainWindow { background-color: white; }")
@@ -403,29 +403,87 @@ class MainWindow(QMainWindow):
         self.hospital_table.setCellWidget(row, 3, btn_widget)
     
     def delete_hospital(self, hospital_name, row):
-        """병원 삭제"""
-        reply = QMessageBox.question(
-            self,
-            "확인",
-            f"{hospital_name} 모니터링을 중지하고 삭제하시겠습니까?",
-            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
+        """병원 삭제 (삭제 옵션 선택)"""
+        
+        # 커스텀 대화상자
+        msg_box = QMessageBox(self)
+        msg_box.setIcon(QMessageBox.Icon.Question)
+        msg_box.setWindowTitle("삭제 확인")
+        msg_box.setText(f"<h3>{hospital_name} 삭제</h3>")
+        msg_box.setInformativeText(
+            "삭제 방식을 선택하세요:\n\n"
+            "• 모니터링만 중지: UI에서만 제거 (DB 유지)\n"
+            "• 병원 정보 삭제: DB에서 병원 제거 (데이터 유지)\n"
+            "• 완전 삭제: DB에서 병원 및 수집 데이터 모두 삭제"
         )
         
-        if reply == QMessageBox.StandardButton.Yes:
-            monitor = self.hospital_monitors.get(hospital_name)
-            if monitor:
-                monitor.stop()
-                del self.hospital_monitors[hospital_name]
+        # 버튼 추가
+        stop_btn = msg_box.addButton("모니터링만 중지", QMessageBox.ButtonRole.ActionRole)
+        delete_btn = msg_box.addButton("병원 정보 삭제", QMessageBox.ButtonRole.DestructiveRole)
+        delete_all_btn = msg_box.addButton("완전 삭제", QMessageBox.ButtonRole.DestructiveRole)
+        cancel_btn = msg_box.addButton("취소", QMessageBox.ButtonRole.RejectRole)
+        
+        msg_box.exec()
+        clicked_button = msg_box.clickedButton()
+        
+        if clicked_button == cancel_btn:
+            return
+        
+        # 1. 모니터링 중지
+        monitor = self.hospital_monitors.get(hospital_name)
+        if monitor:
+            monitor.stop()
+            del self.hospital_monitors[hospital_name]
+        
+        # 2. IP/포트 정보 삭제
+        if hospital_name in self.hospital_info_map:
+            del self.hospital_info_map[hospital_name]
+        
+        # 3. 오류 알림창 닫기
+        if hospital_name in self.error_dialogs:
+            self.error_dialogs[hospital_name].close()
+            del self.error_dialogs[hospital_name]
+        
+        # 4. DB 처리
+        if self.database.db_available:
+            table_name = f"{hospital_name.replace(' ', '_').lower()}_1min"
             
-            if hospital_name in self.hospital_info_map:
-                del self.hospital_info_map[hospital_name]
+            if clicked_button == stop_btn:
+                # UI에서만 제거
+                self.add_log(f"⏸️ {hospital_name} 모니터링 중지 (DB 유지)")
             
-            if hospital_name in self.error_dialogs:
-                self.error_dialogs[hospital_name].close()
-                del self.error_dialogs[hospital_name]
+            elif clicked_button == delete_btn:
+                # 병원 정보만 삭제
+                success = self.database.delete_hospital(hospital_name)
+                if success:
+                    self.add_log(f"🗑️ {hospital_name} 삭제 (데이터 유지)")
+                else:
+                    self.add_log(f"⚠️ {hospital_name} DB 삭제 실패")
             
-            self.hospital_table.removeRow(row)
-            self.add_log(f"🗑️ {hospital_name} 삭제됨")
+            elif clicked_button == delete_all_btn:
+                # 완전 삭제
+                confirm = QMessageBox.warning(
+                    self,
+                    "⚠️ 완전 삭제 경고",
+                    f"{hospital_name}의 모든 수집 데이터가 영구 삭제됩니다.\n"
+                    f"이 작업은 되돌릴 수 없습니다.\n\n"
+                    f"정말로 삭제하시겠습니까?",
+                    QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
+                )
+                
+                if confirm == QMessageBox.StandardButton.Yes:
+                    success = self.database.delete_hospital_with_data(hospital_name, table_name)
+                    if success:
+                        self.add_log(f"🗑️ {hospital_name} 완전 삭제 (데이터 포함)")
+                    else:
+                        self.add_log(f"⚠️ {hospital_name} 완전 삭제 실패")
+                else:
+                    return
+        
+        # 5. UI에서 제거
+        self.hospital_table.removeRow(row)
+        self.add_log(f"🗑️ {hospital_name} UI에서 제거됨")
+
     
     def load_hospitals(self):
         """DB에서 병원 목록 로드"""
