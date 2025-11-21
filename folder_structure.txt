@@ -1,0 +1,21 @@
+ModbusTCPCollector_v2/
+├── central_monitor.py          # 메인 프로그램
+├── dummy_client.py             # 단일 병원 테스트
+├── dummy_client_multi.py       # 다중 병원 테스트
+├── requirements.txt
+├── README.md
+│
+├── config/
+│   └── database.json           # DB 설정
+│
+├── core/
+│   ├── __init__.py
+│   ├── database.py             # PostgreSQL 관리
+│   ├── csv_exporter.py         # CSV 내보내기
+│   └── tcp_server.py           # TCP 서버 (central_monitor.py에 통합됨)
+│
+├── UI/
+│   ├── __init__.py
+│   └── styles.py               # UI 스타일
+│
+└── exports/                    # CSV 파일 저장 폴더 (자동 생성)

@@ -1,0 +1,48 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+sensor/
+ENV/
+*.egg-info/
+dist/
+build/
+
+# PyQt
+*.ui.py
+
+# Database
+*.db
+*.sqlite
+*.sqlite3
+
+# Exports
+exports/
+*.csv
+
+# Logs
+*.log
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Config (민감한 정보)
+config/database.json
+config/local.json
+
+# Backup
+*.bak
+*.backup
