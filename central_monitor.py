@@ -253,7 +253,7 @@ class CentralMainWindow(QMainWindow):
 
     def init_ui(self):
         """UI 초기화"""
-        self.setWindowTitle("🏥 중앙 모니터링 시스템 v1.0")
+        self.setWindowTitle("🏥 중앙 모니터링 시스템 v1.0 (251121)")
         self.setGeometry(100, 50, 1200, 750)
 
         central_widget = QWidget()
