@@ -2,18 +2,20 @@
 # central_monitor.py
 
 """
-중앙 모니터링 시스템 v1.0
+중앙 모니터링 시스템 v1.1
 
 HMI 직접 전송 방식:
-- HMI: 10초마다 데이터 전송 (포맷: [병원명3자리][00][00][전력량10자리])
+- HMI: 10초마다 데이터 전송 (포맷: ASCII 문자열)
 - 서버: TCP 23000 포트 Listen
 - UI: 실시간 표시 (10초 갱신)
 - DB: PostgreSQL에 10초 단위 저장
+- 통신 모니터링: 30초 이상 미수신 시 경고
 """
 
 import sys
 import socket
 import threading
+import time
 from datetime import datetime
 
 from PyQt6.QtWidgets import (
@@ -32,11 +34,19 @@ from UI.styles import UIStyles
 
 # ==================== 전역 설정 ====================
 HOST = "0.0.0.0"  # 모든 IP에서 접속 허용
-PORT = 23000      # 서버 포트 (포트포워딩 필요)
+PORT = 23000      # 서버 포트
 
 # UI용 최신 데이터 (병원명 → 데이터)
 hospital_data = {}
 data_lock = threading.Lock()
+
+# 병원별 통신 상태 추적
+# {"병원명": {"last_received": datetime, "alerted": bool}}
+hospital_status = {}
+status_lock = threading.Lock()
+
+# 타임아웃 설정 (초)
+TIMEOUT_SECONDS = 30
 
 # 로그 메시지 큐
 log_messages = []
@@ -51,15 +61,17 @@ def parse_hmi_data(data: bytes) -> tuple:
     """
     HMI 데이터 파싱 (유연한 포맷)
     
-    포맷 1: [병원명3자리][00][00][전력량10자리] (바이너리 구분자)
-    포맷 2: [병원명3자리][전력량 가변] (ASCII 전체)
+    포맷: [병원명3자리][전력량 숫자] (ASCII 전체)
+    예: ICN00758455 → 병원: ICN, 전력: 7584.55 kWh
     
     Args:
         data: HMI에서 받은 바이트 데이터
     
     Returns:
         (hospital_name: str, power_value: float, hex_str: str)
+        실패 시 (None, None, hex_str)
     """
+    # HEX 문자열 (디버깅용)
     hex_str = ' '.join(f'{b:02X}' for b in data)
     
     try:
@@ -98,8 +110,6 @@ def parse_hmi_data(data: bytes) -> tuple:
         
         power_value = float(f"{integer_part}.{decimal_part}")
         
-        log(f"✅ 파싱 성공 - 병원: {hospital_name}, 전력: {power_value}")
-        
         return hospital_name, power_value, hex_str
     
     except Exception as e:
@@ -116,6 +126,7 @@ def handle_client(conn, addr):
     - 파싱
     - UI 갱신 (메모리)
     - DB 저장
+    - 통신 상태 업데이트
     """
     ip, port = addr
     client_key = f"{ip}:{port}"
@@ -124,49 +135,65 @@ def handle_client(conn, addr):
 
     try:
         while True:
-            # 데이터 수신 (최대 1024바이트)
+            # 데이터 수신
             data = conn.recv(1024)
             if not data:
-                # 클라이언트 연결 종료
                 break
 
             # HMI 데이터 파싱
             hospital_name, power_value, hex_str = parse_hmi_data(data)
             
-            # HEX 로그 (디버깅)
+            # HEX 로그
             log(f"[HEX {client_key}] {hex_str}")
             
             if hospital_name is None or power_value is None:
                 log(f"⚠️ {client_key} 파싱 실패")
                 continue
             
-            current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            current_time = datetime.now()
+            current_time_str = current_time.strftime("%Y-%m-%d %H:%M:%S")
             
-            # UI용 최신 데이터 저장 (메모리)
+            # UI용 최신 데이터 저장
             with data_lock:
                 hospital_data[hospital_name] = {
-                    "value": f"{power_value:,.2f}",  # 천단위 콤마, 소수점 2자리
+                    "value": f"{power_value:,.2f}",
                     "ip": ip,
                     "port": port,
                     "hex": hex_str,
-                    "last_time": current_time,
+                    "last_time": current_time_str,
                 }
             
-            # DB에 병원 등록 (처음 접속 시 자동)
+            # 통신 상태 업데이트
+            with status_lock:
+                if hospital_name not in hospital_status:
+                    hospital_status[hospital_name] = {
+                        "last_received": current_time,
+                        "alerted": False
+                    }
+                else:
+                    # 통신 복구 시 알림 해제
+                    was_alerted = hospital_status[hospital_name]["alerted"]
+                    hospital_status[hospital_name]["last_received"] = current_time
+                    hospital_status[hospital_name]["alerted"] = False
+                    
+                    if was_alerted:
+                        log(f"✅ [{hospital_name}] 통신 복구됨")
+            
+            # DB에 병원 등록 (처음 접속 시)
             if db and db.db_available:
                 db.register_hospital(hospital_name, ip, port)
                 
-                # DB에 최신 데이터 저장 (10초마다)
+                # DB에 최신 데이터 저장
                 db.insert_data(
                     hospital_key=hospital_name,
-                    timestamp=current_time,
+                    timestamp=current_time_str,
                     value=power_value,
                     hex_data=hex_str
                 )
             
             log(f"[{hospital_name}] {power_value:,.2f} kWh → DB 저장")
             
-            # 수신 확인 응답 (선택)
+            # 수신 확인 응답
             try:
                 conn.sendall(b"OK\n")
             except:
@@ -183,7 +210,7 @@ def handle_client(conn, addr):
 
 def start_server():
     """
-    TCP 서버 시작 (별도 스레드에서 실행)
+    TCP 서버 시작
     
     - 0.0.0.0:23000 바인드
     - 클라이언트 accept
@@ -194,7 +221,7 @@ def start_server():
     
     try:
         server.bind((HOST, PORT))
-        server.listen(10)  # 최대 10개 대기
+        server.listen(10)
         log(f"✅ TCP 서버 시작 - 포트 {PORT}")
     except OSError as e:
         log(f"❌ 서버 시작 실패: {e}")
@@ -203,7 +230,6 @@ def start_server():
     while True:
         try:
             conn, addr = server.accept()
-            # 클라이언트마다 별도 스레드 생성
             thread = threading.Thread(
                 target=handle_client,
                 args=(conn, addr),
@@ -215,6 +241,52 @@ def start_server():
             break
 
 
+def monitor_communication():
+    """
+    통신 상태 감시 (별도 스레드)
+    
+    - 5초마다 각 병원의 마지막 수신 시각 체크
+    - 타임아웃 시 로그 경고 + 알림창
+    """
+    log("✅ 통신 모니터 시작")
+    
+    while True:
+        try:
+            current_time = datetime.now()
+            
+            with status_lock:
+                for hospital_name, status in list(hospital_status.items()):
+                    last_received = status["last_received"]
+                    alerted = status["alerted"]
+                    
+                    # 경과 시간 계산
+                    elapsed = (current_time - last_received).total_seconds()
+                    
+                    # 타임아웃 체크
+                    if elapsed > TIMEOUT_SECONDS and not alerted:
+                        # 로그 경고
+                        log(f"⚠️⚠️⚠️ [{hospital_name}] 통신 두절! (마지막 수신: {int(elapsed)}초 전)")
+                        
+                        # 알림 상태 업데이트
+                        hospital_status[hospital_name]["alerted"] = True
+                        
+                        # 알림 메시지 큐에 추가
+                        alert_msg = (
+                            f"병원: {hospital_name}\n"
+                            f"상태: 통신 두절\n"
+                            f"마지막 수신: {int(elapsed)}초 전"
+                        )
+                        with log_lock:
+                            log_messages.append(f"ALERT:{alert_msg}")
+            
+            # 5초마다 체크
+            time.sleep(5)
+        
+        except Exception as e:
+            log(f"❌ 통신 모니터 오류: {e}")
+            time.sleep(5)
+
+
 def log(message):
     """
     로그 메시지 추가 (스레드 안전)
@@ -224,7 +296,7 @@ def log(message):
     """
     with log_lock:
         log_messages.append(message)
-    print(message)  # 콘솔에도 출력
+    print(message)
 
 
 # ==================== PyQt UI ====================
@@ -237,10 +309,13 @@ class CentralMainWindow(QMainWindow):
         # CSV 내보내기 인스턴스
         self.exporter = CSVExporter()
         
+        # 알림창 표시 여부 (중복 방지)
+        self.alert_shown = set()
+        
         # UI 초기화
         self.init_ui()
 
-        # UI 갱신 타이머 (1초마다)
+        # UI 갱신 타이머
         self.update_timer = QTimer()
         self.update_timer.timeout.connect(self.update_display)
         self.update_timer.start(1000)
@@ -253,7 +328,7 @@ class CentralMainWindow(QMainWindow):
 
     def init_ui(self):
         """UI 초기화"""
-        self.setWindowTitle("🏥 중앙 모니터링 시스템 v1.0 (251121)")
+        self.setWindowTitle("🏥 중앙 모니터링 시스템 v1.1")
         self.setGeometry(100, 50, 1200, 750)
 
         central_widget = QWidget()
@@ -290,7 +365,9 @@ class CentralMainWindow(QMainWindow):
 
         # 상태바
         db_status = "✅ DB 연결" if (db and db.db_available) else "⚠️ DB 끊김"
-        self.statusBar().showMessage(f"서버 시작 | {db_status} | 10초 단위 저장")
+        self.statusBar().showMessage(
+            f"서버 시작 | {db_status} | 10초 단위 저장 | 타임아웃: {TIMEOUT_SECONDS}초"
+        )
 
     def create_table(self):
         """병원 테이블 생성"""
@@ -304,18 +381,7 @@ class CentralMainWindow(QMainWindow):
         
         export_btn = QPushButton("📥 CSV 내보내기")
         export_btn.setFont(QFont("", 11))
-        export_btn.setStyleSheet("""
-            QPushButton {
-                background-color: #0078D7;
-                color: white;
-                border: none;
-                border-radius: 4px;
-                padding: 8px 16px;
-                font-weight: bold;
-            }
-            QPushButton:hover { background-color: #005A9E; }
-            QPushButton:pressed { background-color: #004578; }
-        """)
+        export_btn.setStyleSheet(UIStyles.primary_button_style())
         export_btn.clicked.connect(self.open_export_dialog)
         
         button_layout.addWidget(export_btn)
@@ -361,15 +427,25 @@ class CentralMainWindow(QMainWindow):
         return group
 
     def update_display(self):
-        """UI 갱신 (1초마다)"""
-        # 로그 처리
+        """UI 갱신 (알림 처리 포함)"""
+        # 로그 처리 + 알림 감지
         with log_lock:
             while log_messages:
-                self.add_log_to_ui(log_messages.pop(0))
+                msg = log_messages.pop(0)
+                
+                # 알림 메시지 체크
+                if msg.startswith("ALERT:"):
+                    alert_text = msg[6:]
+                    self.show_alert(alert_text)
+                else:
+                    self.add_log_to_ui(msg)
 
         # 테이블 갱신
         with data_lock:
             data_copy = dict(hospital_data)
+        
+        with status_lock:
+            status_copy = dict(hospital_status)
 
         self.hospital_table.setRowCount(len(data_copy))
 
@@ -381,9 +457,22 @@ class CentralMainWindow(QMainWindow):
             order_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
             self.hospital_table.setItem(idx, 0, order_item)
 
-            # 병원명 (IP:포트)
+            # 병원명 (IP:포트) - 통신 상태에 따라 색상 변경
             display_name = f"{hospital_name} ({info['ip']}:{info['port']})"
             name_item = QTableWidgetItem(display_name)
+            
+            # 통신 상태 확인
+            if hospital_name in status_copy:
+                status = status_copy[hospital_name]
+                elapsed = (datetime.now() - status["last_received"]).total_seconds()
+                
+                if elapsed > TIMEOUT_SECONDS:
+                    # 타임아웃: 빨간색
+                    name_item.setForeground(QColor(200, 0, 0))
+                else:
+                    # 정상: 기본색
+                    name_item.setForeground(QColor(0, 0, 0))
+            
             self.hospital_table.setItem(idx, 1, name_item)
 
             # 전체 전력량
@@ -407,6 +496,33 @@ class CentralMainWindow(QMainWindow):
             btn_layout.setContentsMargins(5, 5, 5, 5)
             self.hospital_table.setCellWidget(idx, 3, btn_widget)
 
+    def show_alert(self, message: str):
+        """
+        알림창 표시
+        
+        Args:
+            message: 알림 메시지
+        """
+        # 중복 알림 방지
+        if message in self.alert_shown:
+            return
+        
+        self.alert_shown.add(message)
+        
+        # 알림창 표시
+        msg_box = QMessageBox(self)
+        msg_box.setIcon(QMessageBox.Icon.Warning)
+        msg_box.setWindowTitle("⚠️ 통신 경고")
+        msg_box.setText("병원 통신 두절 감지!")
+        msg_box.setInformativeText(message)
+        msg_box.setStandardButtons(QMessageBox.StandardButton.Ok)
+        
+        # 비동기로 표시
+        msg_box.show()
+        
+        # 5초 후 자동 닫기
+        QTimer.singleShot(5000, msg_box.close)
+
     def delete_hospital(self, hospital_name: str):
         """병원 삭제"""
         reply = QMessageBox.question(
@@ -417,6 +533,12 @@ class CentralMainWindow(QMainWindow):
         if reply == QMessageBox.StandardButton.Yes:
             with data_lock:
                 hospital_data.pop(hospital_name, None)
+            with status_lock:
+                hospital_status.pop(hospital_name, None)
+            
+            # 알림 이력 제거
+            self.alert_shown = {msg for msg in self.alert_shown if hospital_name not in msg}
+            
             log(f"🗑️ {hospital_name} 삭제")
 
     def open_export_dialog(self):
@@ -546,19 +668,23 @@ def main():
     global db
 
     print("\n" + "=" * 70)
-    print("🏥 중앙 모니터링 시스템 v1.0")
+    print("🏥 중앙 모니터링 시스템 v1.1")
     print("=" * 70)
     print(f"시작 시간: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
     print(f"서버 포트: {PORT}")
-    print("데이터: 10초 수신 → UI 갱신 + DB 저장")
+    print(f"타임아웃: {TIMEOUT_SECONDS}초")
     print("=" * 70 + "\n")
 
     # DB 초기화
     db = DatabaseManager()
 
-    # TCP 서버 시작 (백그라운드 스레드)
+    # TCP 서버 시작
     server_thread = threading.Thread(target=start_server, daemon=True)
     server_thread.start()
+
+    # 통신 모니터 시작
+    monitor_thread = threading.Thread(target=monitor_communication, daemon=True)
+    monitor_thread.start()
 
     # PyQt 애플리케이션 실행
     app = QApplication(sys.argv)
