@@ -1,3 +1,4 @@
+#!/usr/bin/env python3
 # core/csv_exporter.py
 
 """
@@ -5,6 +6,7 @@ CSV 내보내기 기능
 
 기능:
 - 지정된 기간의 병원별 10초 단위 데이터를 CSV로 저장
+- PyInstaller 실행 파일 경로 지원
 - 간단한 통계 계산 (평균/최대/최소)
 - 내보낸 파일 목록 조회
 - 파일 삭제
@@ -12,6 +14,7 @@ CSV 내보내기 기능
 
 import csv
 import os
+import sys
 from datetime import datetime
 from pathlib import Path
 
@@ -26,9 +29,25 @@ class CSVExporter:
         Args:
             export_dir (str): CSV 파일을 저장할 디렉토리 경로
         """
-        self.export_dir = export_dir
+        # PyInstaller 실행 파일 경로 처리
+        if getattr(sys, 'frozen', False):
+            # PyInstaller로 빌드된 실행 파일인 경우
+            # sys.executable = 실행 파일(.exe)의 전체 경로
+            base_path = os.path.dirname(sys.executable)
+        else:
+            # 개발 환경에서 Python으로 직접 실행하는 경우
+            base_path = os.path.dirname(os.path.abspath(__file__))
+            # core/ 폴더에서 프로젝트 루트로 이동
+            base_path = os.path.dirname(base_path)
+        
+        # exports 폴더 전체 경로 생성
+        self.export_dir = os.path.join(base_path, export_dir)
+        
         # 디렉토리가 없으면 생성
-        Path(self.export_dir).mkdir(exist_ok=True)
+        Path(self.export_dir).mkdir(parents=True, exist_ok=True)
+        
+        # 경로 확인 로그 출력
+        print(f"✅ CSV 저장 경로: {self.export_dir}")
 
     def export_hospital_data(
         self,
@@ -80,7 +99,7 @@ class CSVExporter:
                 return False, None, "해당 기간에 데이터가 없습니다."
 
             # CSV 파일명 생성
-            # 예: ICN_20251121_160000_to_20251121_170000.csv
+            # 예: ICN_20251123_143000_to_20251124_143000.csv
             start_str = start_datetime.strftime("%Y%m%d_%H%M%S")
             end_str = end_datetime.strftime("%Y%m%d_%H%M%S")
             filename = f"{hospital_name}_{start_str}_to_{end_str}.csv"
@@ -124,9 +143,12 @@ class CSVExporter:
                 f"최소: {min_energy:.2f} kWh"
             )
 
+            print(f"✅ CSV 생성 완료: {filepath}")
+            
             return True, filepath, message
 
         except Exception as e:
+            print(f"❌ CSV 내보내기 오류: {e}")
             return False, None, f"CSV 내보내기 오류: {e}"
 
     def export_all_hospitals(
@@ -214,6 +236,7 @@ class CSVExporter:
         try:
             if os.path.exists(filepath):
                 os.remove(filepath)
+                print(f"✅ 파일 삭제: {filepath}")
                 return True
             return False
         except Exception as e:
