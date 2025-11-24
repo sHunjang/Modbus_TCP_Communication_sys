@@ -57,7 +57,7 @@ class DatabaseManager:
             return {
                 "host": "localhost",
                 "port": 5432,
-                "dbname": "hospital_power",
+                "dbname": "hospitals",
                 "user": "postgres",
                 "password": "1234",
                 "sslmode": "prefer",
@@ -67,7 +67,7 @@ class DatabaseManager:
             return {
                 "host": "localhost",
                 "port": 5432,
-                "dbname": "hospital_power",
+                "dbname": "hospitals",
                 "user": "postgres",
                 "password": "1234",
                 "sslmode": "prefer",

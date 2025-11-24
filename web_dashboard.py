@@ -5,13 +5,14 @@
 웹 기반 대시보드 서버
 
 근로복지공단 등 외부에서 브라우저로 접속하여 실시간 모니터링
-포트: 5000 (HTTP)
+포트: 20000 (HTTP)
 """
 
-from flask import Flask, render_template, jsonify, request
+from flask import Flask, render_template, jsonify, request, send_file
 from flask_cors import CORS
 from datetime import datetime
 import threading
+import os
 
 from core.database import DatabaseManager
 
@@ -163,6 +164,59 @@ def get_status():
     })
 
 
+@app.route('/api/export_csv/<hospital_key>')
+def export_csv(hospital_key):
+    """
+    CSV 내보내기 API
+    
+    Args:
+        hospital_key: 병원 식별자
+        start: 시작 시간 (YYYY-MM-DDTHH:MM 형식)
+        end: 종료 시간 (YYYY-MM-DDTHH:MM 형식)
+    
+    Returns:
+        CSV 파일 다운로드
+    """
+    if not db.db_available:
+        return jsonify({"error": "DB 연결 안됨"}), 500
+    
+    # 쿼리 파라미터 가져오기
+    start_time = request.args.get('start')
+    end_time = request.args.get('end')
+    
+    if not start_time or not end_time:
+        return jsonify({"error": "시작/종료 시간이 필요합니다"}), 400
+    
+    try:
+        # 시간 형식 변환 (ISO 8601 → datetime)
+        start_dt = datetime.fromisoformat(start_time.replace('T', ' ').replace('Z', ''))
+        end_dt = datetime.fromisoformat(end_time.replace('T', ' ').replace('Z', ''))
+    except Exception as e:
+        return jsonify({"error": f"시간 형식 오류: {e}"}), 400
+    
+    # CSV exporter 사용
+    from core.csv_exporter import CSVExporter
+    exporter = CSVExporter()
+    
+    success, filepath, message = exporter.export_hospital_data(
+        db,
+        hospital_key,
+        start_dt,
+        end_dt
+    )
+    
+    if not success:
+        return jsonify({"error": message}), 500
+    
+    # CSV 파일 전송
+    return send_file(
+        filepath,
+        mimetype='text/csv',
+        as_attachment=True,
+        download_name=os.path.basename(filepath)
+    )
+
+
 # ==================== 메인 ====================
 def main():
     """웹 서버 시작"""
@@ -170,7 +224,8 @@ def main():
     print("🌐 웹 대시보드 서버 시작")
     print("=" * 70)
     print(f"시작 시간: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
-    print(f"접속 주소: http://0.0.0.0:20000")
+    print(f"로컬 접속: http://127.0.0.1:20000")
+    print(f"내부망 접속: http://192.168.0.x:20000")
     print(f"외부 접속: http://14.42.209.171:20000")
     print("=" * 70 + "\n")
     

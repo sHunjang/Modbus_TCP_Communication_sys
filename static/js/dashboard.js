@@ -39,7 +39,7 @@ async function updateDashboard() {
     }
 }
 
-// 테이블 업데이트 (PyQt와 동일)
+// 테이블 업데이트
 function updateTable(data) {
     const tbody = document.getElementById('hospital-tbody');
 
@@ -55,7 +55,7 @@ function updateTable(data) {
     const sortedData = Object.entries(data).sort((a, b) => a[0].localeCompare(b[0]));
 
     for (const [hospitalKey, info] of sortedData) {
-        // 통신 상태 확인 (30초 이상 차이나면 빨간색)
+        // 통신 상태 확인
         const lastTime = new Date(info.timestamp);
         const now = new Date();
         const diffSeconds = Math.floor((now - lastTime) / 1000);
@@ -84,11 +84,10 @@ function updateTable(data) {
     tbody.innerHTML = html;
 }
 
-// 병원 삭제 (웹에서는 UI에서만 제거)
+// 병원 삭제
 function deleteHospital(hospitalKey) {
     if (confirm(`${hospitalKey}을(를) 삭제하시겠습니까?`)) {
         addLog(`🗑️ ${hospitalKey} 삭제`);
-        // 실제로는 서버에 삭제 API 호출 필요
         updateDashboard();
     }
 }
@@ -122,6 +121,11 @@ async function showExportDialog() {
     const hospitalSelect = document.getElementById('hospital-select');
     hospitalSelect.innerHTML = '';
 
+    if (Object.keys(data).length === 0) {
+        alert('등록된 병원이 없습니다.');
+        return;
+    }
+
     for (const key in data) {
         const option = document.createElement('option');
         option.value = key;
@@ -149,12 +153,52 @@ async function exportCSV() {
     const startTime = document.getElementById('start-time').value;
     const endTime = document.getElementById('end-time').value;
 
+    if (!hospitalKey || !startTime || !endTime) {
+        alert('병원과 기간을 선택하세요.');
+        return;
+    }
+
     addLog(`📥 CSV 내보내기 시작: ${hospitalKey}`);
 
-    // 실제로는 서버의 CSV 내보내기 API 호출
-    alert(`CSV 내보내기 기능은 서버 측에서 구현해야 합니다.\n병원: ${hospitalKey}\n기간: ${startTime} ~ ${endTime}`);
+    try {
+        // API 호출
+        const url = `${API_BASE}/api/export_csv/${hospitalKey}?start=${startTime}&end=${endTime}`;
 
-    closeExportDialog();
+        // 파일 다운로드
+        const response = await fetch(url);
+
+        if (!response.ok) {
+            const error = await response.json();
+            alert(`CSV 내보내기 실패: ${error.error}`);
+            addLog(`❌ CSV 내보내기 실패: ${error.error}`);
+            return;
+        }
+
+        // Blob으로 변환
+        const blob = await response.blob();
+
+        // 파일명 생성
+        const filename = `${hospitalKey}_${startTime.replace(/[-:T]/g, '')}_${endTime.replace(/[-:T]/g, '')}.csv`;
+
+        // 다운로드 링크 생성
+        const downloadUrl = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = downloadUrl;
+        a.download = filename;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        window.URL.revokeObjectURL(downloadUrl);
+
+        addLog(`✅ CSV 내보내기 완료: ${filename}`);
+        alert(`CSV 파일이 다운로드되었습니다.\n파일명: ${filename}`);
+
+        closeExportDialog();
+    } catch (error) {
+        console.error('CSV 내보내기 오류:', error);
+        alert(`CSV 내보내기 오류: ${error.message}`);
+        addLog(`❌ CSV 내보내기 오류: ${error.message}`);
+    }
 }
 
 // 초기 로드

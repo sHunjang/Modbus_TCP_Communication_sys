@@ -30,13 +30,13 @@ pip install -r requirements.txt
 
 - PostgreSQL 설치 후 DB 생성
 ```bash
-createdb hospital_power
+createdb hospitals
 ```
 
 - 또는 psql에서
 ```bash
 psql -U postgres
-CREATE DATABASE hospital_power;
+CREATE DATABASE hospitals;
 \q
 ```
 
@@ -48,7 +48,7 @@ CREATE DATABASE hospital_power;
 {
 "host": "localhost",
 "port": 5432,
-"dbname": "hospital_power",
+"dbname": "hospitals",
 "user": "postgres",
 "password": "your_password"
 }
