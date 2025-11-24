@@ -668,7 +668,7 @@ def main():
     global db
 
     print("\n" + "=" * 70)
-    print("🏥 중앙 모니터링 시스템 v1.1")
+    print("🏥 중앙 모니터링 시스템 v1.2")
     print("=" * 70)
     print(f"시작 시간: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
     print(f"서버 포트: {PORT}")

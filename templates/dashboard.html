@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html lang="ko">
+    <head>
+        <meta charset="UTF-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+        <title>🏥 중앙 모니터링 시스템 v1.1</title>
+        <link rel="stylesheet" href="/static/css/style.css" />
+    </head>
+    <body>
+        <div class="main-container">
+            <!-- 상단 헤더 -->
+            <div class="header">
+                <h1>🏥 중앙 모니터링 시스템 (포트 23000)</h1>
+                <div class="time-display" id="server-time">⏰ --:--:--</div>
+            </div>
+
+            <!-- 실시간 전력량 섹션 -->
+            <div class="table-section">
+                <div class="section-header">
+                    <h2>📊 실시간 전력량 (10초 갱신)</h2>
+                    <button class="export-btn" onclick="showExportDialog()">📥 CSV 내보내기</button>
+                </div>
+
+                <table id="hospital-table">
+                    <thead>
+                        <tr>
+                            <th style="width: 80px">순서</th>
+                            <th>병원명 (IP주소:포트)</th>
+                            <th style="width: 250px">전체 전력량 (kWh)</th>
+                            <th style="width: 120px">액션</th>
+                        </tr>
+                    </thead>
+                    <tbody id="hospital-tbody">
+                        <tr>
+                            <td colspan="4" class="no-data">데이터 로딩 중...</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+
+            <!-- 시스템 로그 섹션 -->
+            <div class="log-section">
+                <h2>📝 시스템 로그</h2>
+                <div class="log-container" id="log-container"></div>
+            </div>
+
+            <!-- 상태바 -->
+            <div class="status-bar">
+                <span id="status-text"
+                    >서버 시작 | <span id="db-status">⚠️ DB 끊김</span> | 10초 단위 저장 | 타임아웃: 30초</span
+                >
+            </div>
+        </div>
+
+        <!-- CSV 내보내기 다이얼로그 -->
+        <div id="export-dialog" class="modal">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h3>CSV 내보내기</h3>
+                    <button class="close-btn" onclick="closeExportDialog()">&times;</button>
+                </div>
+                <div class="modal-body">
+                    <label>병원 선택:</label>
+                    <select id="hospital-select" class="form-control"></select>
+
+                    <label>시작 시간:</label>
+                    <input type="datetime-local" id="start-time" class="form-control" />
+
+                    <label>종료 시간:</label>
+                    <input type="datetime-local" id="end-time" class="form-control" />
+                </div>
+                <div class="modal-footer">
+                    <button class="btn-primary" onclick="exportCSV()">내보내기</button>
+                    <button class="btn-secondary" onclick="closeExportDialog()">취소</button>
+                </div>
+            </div>
+        </div>
+
+        <script src="/static/js/dashboard.js"></script>
+    </body>
+</html>

@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 # core/csv_exporter.py
 
 """
