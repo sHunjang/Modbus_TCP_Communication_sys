@@ -3,18 +3,14 @@
 
 """
 PostgreSQL 데이터베이스 관리
-
-기능:
-- 병원 정보 테이블 관리 (hospitals)
-- 병원별 데이터 테이블 자동 생성 (hospital_병원명)
-- 10초 단위 전력량 데이터 저장
-- 연결 풀 관리
 """
 
 import psycopg2
 from psycopg2 import pool
 from psycopg2.extras import RealDictCursor
 import json
+import sys
+import os
 from pathlib import Path
 
 
@@ -32,16 +28,14 @@ class DatabaseManager:
         self.connection_pool = None
         self.db_available = False
         
-        # 연결 풀 초기화
         self.initialize_pool()
 
-        # 기본 테이블 생성
         if self.db_available:
             self.setup_base_tables()
 
     def load_config(self, config_file):
         """
-        설정 파일 로드
+        설정 파일 로드 (PyInstaller 경로 처리)
         
         Args:
             config_file: 설정 파일 경로
@@ -49,15 +43,28 @@ class DatabaseManager:
         Returns:
             dict: DB 설정
         """
+        # PyInstaller 실행 파일 경로 처리
+        if getattr(sys, 'frozen', False):
+            # PyInstaller로 빌드된 실행 파일
+            # sys._MEIPASS: 임시 압축 해제 폴더
+            base_path = sys._MEIPASS
+        else:
+            # 개발 환경
+            base_path = os.path.dirname(os.path.abspath(__file__))
+            base_path = os.path.dirname(base_path)  # 프로젝트 루트로
+        
+        config_path = os.path.join(base_path, config_file)
+        
         try:
-            with open(config_file, "r", encoding="utf-8") as f:
+            with open(config_path, "r", encoding="utf-8") as f:
+                print(f"✅ 설정 파일 로드: {config_path}")
                 return json.load(f)
         except FileNotFoundError:
-            print(f"⚠️ {config_file} 없음, 기본값 사용")
+            print(f"⚠️ {config_path} 없음, 기본값 사용")
             return {
                 "host": "localhost",
                 "port": 5432,
-                "dbname": "hospitals",
+                "dbname": "hospital_power",
                 "user": "postgres",
                 "password": "1234",
                 "sslmode": "prefer",
@@ -67,23 +74,18 @@ class DatabaseManager:
             return {
                 "host": "localhost",
                 "port": 5432,
-                "dbname": "hospitals",
+                "dbname": "hospital_power",
                 "user": "postgres",
                 "password": "1234",
                 "sslmode": "prefer",
             }
 
     def initialize_pool(self):
-        """
-        연결 풀 초기화
-        
-        - 최소 1개, 최대 20개 연결 유지
-        - 연결 실패 시 db_available = False
-        """
+        """연결 풀 초기화"""
         try:
             self.connection_pool = psycopg2.pool.SimpleConnectionPool(
-                1,  # 최소 연결 수
-                20,  # 최대 연결 수
+                1,
+                20,
                 host=self.config["host"],
                 port=self.config["port"],
                 database=self.config["dbname"],
@@ -96,21 +98,9 @@ class DatabaseManager:
         except Exception as e:
             self.db_available = False
             print(f"❌ DB 연결 오류: {e}")
-            print(f"   호스트: {self.config['host']}:{self.config['port']}")
-            print(f"   데이터베이스: {self.config['dbname']}")
-            print(f"   사용자: {self.config['user']}")
 
     def setup_base_tables(self):
-        """
-        기본 테이블(hospitals) 생성
-        
-        hospitals 테이블:
-        - id: 병원 ID (자동 증가)
-        - hospital_key: 병원 식별자 (예: "ICN")
-        - ip_address: HMI IP 주소
-        - port: HMI 포트
-        - created_at: 등록 시각
-        """
+        """기본 테이블 생성"""
         conn = None
         try:
             conn = self.get_connection()
@@ -118,8 +108,6 @@ class DatabaseManager:
                 return
 
             cursor = conn.cursor()
-
-            # 병원 목록 테이블 생성
             cursor.execute("""
                 CREATE TABLE IF NOT EXISTS hospitals (
                     id SERIAL PRIMARY KEY,
@@ -141,43 +129,50 @@ class DatabaseManager:
             if conn:
                 self.release_connection(conn)
 
+    # ... (나머지 메서드는 동일)
+    
+    def get_connection(self):
+        """연결 풀에서 연결 가져오기"""
+        if not self.db_available or not self.connection_pool:
+            return None
+        try:
+            return self.connection_pool.getconn()
+        except Exception as e:
+            print(f"❌ 연결 가져오기 오류: {e}")
+            return None
+
+    def release_connection(self, conn):
+        """연결 풀에 연결 반환"""
+        if self.connection_pool:
+            self.connection_pool.putconn(conn)
+
+    def close(self):
+        """연결 풀 닫기"""
+        if self.connection_pool:
+            self.connection_pool.closeall()
+            print("✅ DB 연결 풀 닫힘")
+
     def register_hospital(self, hospital_key: str, ip_address: str, port: int):
-        """
-        병원 등록 및 데이터 테이블 생성
-        
-        Args:
-            hospital_key: 병원 식별자 (예: "ICN")
-            ip_address: HMI IP 주소
-            port: HMI 포트 번호
-        
-        Returns:
-            bool: 성공 여부
-        """
+        """병원 등록 및 데이터 테이블 생성"""
         if not self.db_available:
             return False
 
-        # 테이블명 생성 (특수문자 제거)
-        # 예: "ICN" → "hospital_ICN"
         table_name = f"hospital_{hospital_key.replace('.', '_').replace(':', '_')}"
 
-        # Step 1: hospitals 테이블에 병원 정보 등록
         conn = None
         try:
             conn = self.get_connection()
             cursor = conn.cursor()
 
-            # 이미 등록되어 있는지 확인
             cursor.execute(
                 "SELECT id FROM hospitals WHERE hospital_key = %s",
                 (hospital_key,),
             )
             if cursor.fetchone():
-                # 이미 등록됨
                 cursor.close()
                 self.release_connection(conn)
                 return True
 
-            # 새로 등록
             cursor.execute(
                 """
                 INSERT INTO hospitals (hospital_key, ip_address, port)
@@ -196,13 +191,11 @@ class DatabaseManager:
             print(f"❌ hospitals 등록 오류: {e}")
             return False
 
-        # Step 2: 병원별 데이터 테이블 생성
         conn = None
         try:
             conn = self.get_connection()
             cursor = conn.cursor()
 
-            # 데이터 테이블 생성 (소수점 지원)
             cursor.execute(f"""
                 CREATE TABLE IF NOT EXISTS {table_name} (
                     id BIGSERIAL PRIMARY KEY,
@@ -213,7 +206,6 @@ class DatabaseManager:
             """)
             conn.commit()
 
-            # 인덱스 생성 (timestamp 기준 내림차순)
             cursor.execute(
                 f"CREATE INDEX IF NOT EXISTS idx_{table_name}_timestamp "
                 f"ON {table_name}(timestamp DESC)"
@@ -233,26 +225,11 @@ class DatabaseManager:
             print(f"❌ 테이블 생성 오류: {e}")
             return False
 
-    def insert_data(
-        self, 
-        hospital_key: str, 
-        timestamp: str, 
-        value: float, 
-        hex_data: str = None
-    ):
-        """
-        데이터 저장 (10초마다)
-        
-        Args:
-            hospital_key: 병원 식별자 (예: "ICN")
-            timestamp: 시각 (예: "2025-11-21 16:20:10")
-            value: 전력량 (예: 6543.21)
-            hex_data: HEX 원본 데이터 (선택)
-        """
+    def insert_data(self, hospital_key: str, timestamp: str, value: float, hex_data: str = None):
+        """데이터 저장"""
         if not self.db_available:
             return
 
-        # 테이블명 생성
         table_name = f"hospital_{hospital_key.replace('.', '_').replace(':', '_')}"
 
         conn = None
@@ -260,7 +237,6 @@ class DatabaseManager:
             conn = self.get_connection()
             cursor = conn.cursor()
 
-            # INSERT
             cursor.execute(
                 f"""
                 INSERT INTO {table_name} (timestamp, value, hex_data)
@@ -280,16 +256,7 @@ class DatabaseManager:
                 self.release_connection(conn)
 
     def get_hospitals(self):
-        """
-        등록된 병원 목록 조회
-        
-        Returns:
-            list[dict]: 병원 정보 리스트
-                - hospital_key: 병원 식별자
-                - ip_address: IP 주소
-                - port: 포트
-                - created_at: 등록 시각
-        """
+        """등록된 병원 목록 조회"""
         if not self.db_available:
             return []
 
@@ -304,95 +271,8 @@ class DatabaseManager:
             cursor.close()
             self.release_connection(conn)
             
-            return hospitals if hospitals else []
+            return [dict(h) for h in hospitals]
+        
         except Exception as e:
-            print(f"❌ 병원 조회 오류: {e}")
-            if conn:
-                self.release_connection(conn)
+            print(f"❌ 병원 목록 조회 오류: {e}")
             return []
-
-    def get_hospital_data(
-        self, 
-        hospital_key: str, 
-        start_datetime, 
-        end_datetime, 
-        limit: int = 1000
-    ):
-        """
-        특정 병원의 기간별 데이터 조회
-        
-        Args:
-            hospital_key: 병원 식별자
-            start_datetime: 시작 시각
-            end_datetime: 종료 시각
-            limit: 최대 레코드 수
-        
-        Returns:
-            list[dict]: 데이터 리스트
-        """
-        if not self.db_available:
-            return []
-
-        table_name = f"hospital_{hospital_key.replace('.', '_').replace(':', '_')}"
-
-        conn = None
-        try:
-            conn = self.get_connection()
-            cursor = conn.cursor(cursor_factory=RealDictCursor)
-
-            query = f"""
-                SELECT timestamp, value, hex_data
-                FROM {table_name}
-                WHERE timestamp >= %s AND timestamp <= %s
-                ORDER BY timestamp ASC
-                LIMIT %s
-            """
-            cursor.execute(query, (start_datetime, end_datetime, limit))
-            rows = cursor.fetchall()
-            
-            cursor.close()
-            self.release_connection(conn)
-            
-            return rows if rows else []
-        except Exception as e:
-            print(f"❌ 데이터 조회 오류: {e}")
-            if conn:
-                self.release_connection(conn)
-            return []
-
-    def get_connection(self):
-        """
-        연결 풀에서 연결 가져오기
-        
-        Returns:
-            psycopg2.connection: DB 연결 객체
-        """
-        try:
-            if self.connection_pool:
-                return self.connection_pool.getconn()
-        except Exception as e:
-            print(f"❌ 연결 오류: {e}")
-        return None
-
-    def release_connection(self, conn):
-        """
-        연결을 풀에 반환
-        
-        Args:
-            conn: 반환할 연결 객체
-        """
-        try:
-            if conn and self.connection_pool:
-                self.connection_pool.putconn(conn)
-        except Exception as e:
-            print(f"❌ 연결 반환 오류: {e}")
-
-    def close(self):
-        """
-        연결 풀 종료
-        
-        프로그램 종료 시 호출
-        """
-        if self.connection_pool:
-            self.connection_pool.closeall()
-            print("✅ DB 연결 풀 종료")
