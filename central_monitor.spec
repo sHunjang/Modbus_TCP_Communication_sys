@@ -8,16 +8,33 @@ a = Analysis(
     binaries=[],
     datas=[
         ('config/database.json', 'config'),
-        ('UI/styles.py', 'UI'),
+        ('templates/*', 'templates'),
+        ('static/css/*', 'static/css'),
+        ('static/js/*', 'static/js'),
     ],
     hiddenimports=[
+        # PostgreSQL
         'psycopg2',
         'psycopg2._psycopg',
+        
+        # PyQt6
         'PyQt6.QtCore',
         'PyQt6.QtGui',
         'PyQt6.QtWidgets',
+        
+        # Flask
+        'flask',
+        'flask_cors',
+        'waitress',
+        'werkzeug',
+        'jinja2',
+        
+        # Core 모듈
         'core.database',
         'core.csv_exporter',
+        
+        # UI 모듈 (추가)
+        'UI.main_window',
         'UI.styles',
     ],
     hookspath=[],
@@ -28,6 +45,10 @@ a = Analysis(
         'numpy',
         'PIL',
         'tkinter',
+        'PySide6',          
+        'PySide6.QtCore',   
+        'PySide6.QtGui',    
+        'PySide6.QtWidgets',
     ],
     win_no_prefer_redirects=False,
     win_private_assemblies=False,
@@ -51,11 +72,10 @@ exe = EXE(
     upx=True,
     upx_exclude=[],
     runtime_tmpdir=None,
-    console=True,  # 콘솔 창 보이기 (로그 확인용)
+    console=True,
     disable_windowed_traceback=False,
     argv_emulation=False,
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
-    icon=None
 )
