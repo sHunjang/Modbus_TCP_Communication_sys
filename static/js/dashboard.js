@@ -33,9 +33,30 @@ async function updateDashboard() {
 
         // 테이블 업데이트
         updateTable(latestData);
+
+        // 로그 업데이트 (5초마다)
+        updateLogs();
     } catch (error) {
         console.error('데이터 갱신 오류:', error);
         addLog('❌ 데이터 갱신 오류: ' + error.message);
+    }
+}
+
+// 로그 업데이트 (서버에서 가져오기)
+async function updateLogs() {
+    try {
+        const res = await fetch(`${API_BASE}/api/logs`);
+        const logs = await res.json();
+
+        // 로그 컨테이너에 표시 (최신 10개만)
+        const logContainer = document.getElementById('log-container');
+        const recentLogs = logs.slice(-10).reverse();
+
+        logContainer.innerHTML = recentLogs
+            .map((log) => `<div class="log-line">[${log.timestamp}] 💾 ${log.message}</div>`)
+            .join('');
+    } catch (error) {
+        console.error('로그 갱신 오류:', error);
     }
 }
 
@@ -92,7 +113,7 @@ function deleteHospital(hospitalKey) {
     }
 }
 
-// 로그 추가
+// 로컬 로그 추가 (사용자 액션용)
 function addLog(message) {
     const now = new Date();
     const timestamp = now.toTimeString().split(' ')[0];
@@ -100,21 +121,13 @@ function addLog(message) {
 
     logMessages.push(logLine);
 
-    // 최대 100개만 유지
     if (logMessages.length > 100) {
         logMessages.shift();
     }
-
-    const logContainer = document.getElementById('log-container');
-    logContainer.innerHTML = logMessages.map((msg) => `<div class="log-line">${msg}</div>`).join('');
-
-    // 자동 스크롤
-    logContainer.scrollTop = logContainer.scrollHeight;
 }
 
 // CSV 내보내기 다이얼로그
 async function showExportDialog() {
-    // 병원 목록 조회
     const res = await fetch(`${API_BASE}/api/latest_data`);
     const data = await res.json();
 
@@ -133,14 +146,12 @@ async function showExportDialog() {
         hospitalSelect.appendChild(option);
     }
 
-    // 기본 시간 설정 (어제 ~ 오늘)
     const now = new Date();
     const yesterday = new Date(now.getTime() - 24 * 60 * 60 * 1000);
 
     document.getElementById('start-time').value = yesterday.toISOString().slice(0, 16);
     document.getElementById('end-time').value = now.toISOString().slice(0, 16);
 
-    // 모달 표시
     document.getElementById('export-dialog').classList.add('show');
 }
 
@@ -161,26 +172,18 @@ async function exportCSV() {
     addLog(`📥 CSV 내보내기 시작: ${hospitalKey}`);
 
     try {
-        // API 호출
         const url = `${API_BASE}/api/export_csv/${hospitalKey}?start=${startTime}&end=${endTime}`;
-
-        // 파일 다운로드
         const response = await fetch(url);
 
         if (!response.ok) {
             const error = await response.json();
             alert(`CSV 내보내기 실패: ${error.error}`);
-            addLog(`❌ CSV 내보내기 실패: ${error.error}`);
             return;
         }
 
-        // Blob으로 변환
         const blob = await response.blob();
-
-        // 파일명 생성
         const filename = `${hospitalKey}_${startTime.replace(/[-:T]/g, '')}_${endTime.replace(/[-:T]/g, '')}.csv`;
 
-        // 다운로드 링크 생성
         const downloadUrl = window.URL.createObjectURL(blob);
         const a = document.createElement('a');
         a.href = downloadUrl;
@@ -190,19 +193,15 @@ async function exportCSV() {
         document.body.removeChild(a);
         window.URL.revokeObjectURL(downloadUrl);
 
-        addLog(`✅ CSV 내보내기 완료: ${filename}`);
         alert(`CSV 파일이 다운로드되었습니다.\n파일명: ${filename}`);
-
         closeExportDialog();
     } catch (error) {
         console.error('CSV 내보내기 오류:', error);
         alert(`CSV 내보내기 오류: ${error.message}`);
-        addLog(`❌ CSV 내보내기 오류: ${error.message}`);
     }
 }
 
 // 초기 로드
-addLog('✅ 웹 대시보드 시작');
 updateDashboard();
 
 // 5초마다 자동 갱신

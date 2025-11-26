@@ -32,6 +32,7 @@ from UI.styles import UIStyles
 TCP_PORT = 23000
 WEB_PORT = 20000
 TIMEOUT_SECONDS = 30
+DB_SAVE_INTERVAL = 30
 
 # 공유 데이터
 hospital_data = {}
@@ -40,8 +41,17 @@ data_lock = threading.Lock()
 hospital_status = {}
 status_lock = threading.Lock()
 
+last_db_save = {}
+save_time_lock = threading.Lock()
+
+# 로그 (PyQt UI용)
 log_messages = []
 log_lock = threading.Lock()
+
+# 웹 로그 (웹 대시보드용) - 30초 저장 시에만
+web_logs = []
+web_log_lock = threading.Lock()
+MAX_WEB_LOGS = 100  # 최대 100개까지만 유지
 
 db = None
 
@@ -49,6 +59,13 @@ db = None
 # ==================== Flask 웹 앱 ====================
 web_app = Flask(__name__)
 CORS(web_app)
+
+# ==================== Flask 웹 API ====================
+@web_app.route('/api/logs')
+def get_logs():
+    """웹 로그 조회 (30초 저장 로그만)"""
+    with web_log_lock:
+        return jsonify(web_logs)
 
 @web_app.route('/')
 def index():
@@ -162,7 +179,32 @@ def parse_hmi_data(data: bytes) -> tuple:
 
 
 # ==================== TCP 서버 ====================
+# ==================== 전역 설정 ====================
+TCP_PORT = 23000
+WEB_PORT = 20000
+TIMEOUT_SECONDS = 30
+DB_SAVE_INTERVAL = 30  # ← 추가: DB 저장 간격 (초)
+
+# 공유 데이터
+hospital_data = {}
+data_lock = threading.Lock()
+
+hospital_status = {}
+status_lock = threading.Lock()
+
+# 마지막 DB 저장 시간 추적
+last_db_save = {}
+save_time_lock = threading.Lock()
+
+log_messages = []
+log_lock = threading.Lock()
+
+db = None
+
+
+# ==================== TCP 서버 ====================
 def handle_client(conn, addr):
+    """클라이언트 처리 (웹 로그 추가)"""
     ip, port = addr
     client_key = f"{ip}:{port}"
     log(f"[접속] {client_key}")
@@ -174,7 +216,9 @@ def handle_client(conn, addr):
                 break
 
             hospital_name, power_value, hex_str = parse_hmi_data(data)
-            log(f"[HEX {client_key}] {hex_str}")
+            
+            # HEX 로그는 콘솔만
+            print(f"[HEX {client_key}] {hex_str}")
             
             if hospital_name is None or power_value is None:
                 log(f"⚠️ {client_key} 파싱 실패")
@@ -183,6 +227,7 @@ def handle_client(conn, addr):
             current_time = datetime.now()
             current_time_str = current_time.strftime("%Y-%m-%d %H:%M:%S")
             
+            # UI용 데이터 업데이트
             with data_lock:
                 hospital_data[hospital_name] = {
                     "value": f"{power_value:,.2f}",
@@ -192,9 +237,13 @@ def handle_client(conn, addr):
                     "last_time": current_time_str,
                 }
             
+            # 통신 상태 업데이트
             with status_lock:
                 if hospital_name not in hospital_status:
-                    hospital_status[hospital_name] = {"last_received": current_time, "alerted": False}
+                    hospital_status[hospital_name] = {
+                        "last_received": current_time,
+                        "alerted": False
+                    }
                 else:
                     was_alerted = hospital_status[hospital_name]["alerted"]
                     hospital_status[hospital_name]["last_received"] = current_time
@@ -202,11 +251,48 @@ def handle_client(conn, addr):
                     if was_alerted:
                         log(f"✅ [{hospital_name}] 통신 복구됨")
             
-            if db and db.db_available:
-                db.register_hospital(hospital_name, ip, port)
-                db.insert_data(hospital_key=hospital_name, timestamp=current_time_str, value=power_value, hex_data=hex_str)
+            # DB 저장 판단
+            should_save = False
             
-            log(f"[{hospital_name}] {power_value:,.2f} kWh → DB 저장")
+            with save_time_lock:
+                if hospital_name not in last_db_save:
+                    should_save = True
+                    last_db_save[hospital_name] = current_time
+                else:
+                    elapsed = (current_time - last_db_save[hospital_name]).total_seconds()
+                    if elapsed >= DB_SAVE_INTERVAL:
+                        should_save = True
+                        last_db_save[hospital_name] = current_time
+            
+            # 30초마다 DB 저장 + 로그
+            if should_save:
+                if db and db.db_available:
+                    db.register_hospital(hospital_name, ip, port)
+                    db.insert_data(
+                        hospital_key=hospital_name,
+                        timestamp=current_time_str,
+                        value=power_value,
+                        hex_data=hex_str
+                    )
+                    
+                    # PyQt UI 로그
+                    log(f"💾 [{hospital_name}] {power_value:,.2f} kWh → DB 저장")
+                    
+                    # 웹 로그 추가 (30초마다만)
+                    web_log_entry = {
+                        "timestamp": current_time_str,
+                        "hospital": hospital_name,
+                        "value": f"{power_value:,.2f}",
+                        "message": f"[{hospital_name}] {power_value:,.2f} kWh"
+                    }
+                    
+                    with web_log_lock:
+                        web_logs.append(web_log_entry)
+                        # 최대 개수 유지
+                        if len(web_logs) > MAX_WEB_LOGS:
+                            web_logs.pop(0)
+                else:
+                    log(f"⚠️ [{hospital_name}] DB 연결 끊김 - 저장 실패")
             
             try:
                 conn.sendall(b"OK\n")
@@ -220,6 +306,8 @@ def handle_client(conn, addr):
     finally:
         conn.close()
         log(f"[종료] {client_key}")
+
+
 
 
 def start_server():
