@@ -84,7 +84,7 @@ class CentralMainWindow(QMainWindow):
 
     def init_ui(self):
         """UI 초기화"""
-        self.setWindowTitle("🏥 중앙 모니터링 시스템 v1.2 (통합)")
+        self.setWindowTitle("🏥 근로복지공단 병원 전력량 모니터링 시스템 v1.3")
         self.setGeometry(100, 50, 1200, 750)
 
         central_widget = QWidget()
@@ -106,14 +106,14 @@ class CentralMainWindow(QMainWindow):
         # 상태바
         db_status = "✅ DB 연결" if (self.db and self.db.db_available) else "⚠️ DB 끊김"
         self.statusBar().showMessage(
-            f"서버 시작 | {db_status} | 10초 단위 저장 | 타임아웃: {self.timeout_seconds}초"
+            f"서버 시작 | {db_status} | 5초 단위 저장 | 타임아웃: {self.timeout_seconds}초"
         )
 
     def create_header(self):
         """헤더 생성"""
         header = QHBoxLayout()
 
-        title = QLabel(f"🏥 중앙 모니터링 시스템 (TCP: {self.tcp_port} / WEB: {self.web_port})")
+        title = QLabel(f"🏥 근로복지공단 병원 전력량 모니터링 시스템 (TCP: {self.tcp_port} / WEB: {self.web_port})")
         title_font = title.font()
         title_font.setPointSize(18)
         title_font.setBold(True)

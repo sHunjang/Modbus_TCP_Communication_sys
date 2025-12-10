@@ -31,8 +31,8 @@ from UI.styles import UIStyles
 # ==================== 전역 설정 ====================
 TCP_PORT = 23000
 WEB_PORT = 20000
-TIMEOUT_SECONDS = 30
-DB_SAVE_INTERVAL = 30
+TIMEOUT_SECONDS = 3
+DB_SAVE_INTERVAL = 5
 
 # 공유 데이터
 hospital_data = {}
@@ -182,8 +182,8 @@ def parse_hmi_data(data: bytes) -> tuple:
 # ==================== 전역 설정 ====================
 TCP_PORT = 23000
 WEB_PORT = 20000
-TIMEOUT_SECONDS = 30
-DB_SAVE_INTERVAL = 30  # ← 추가: DB 저장 간격 (초)
+TIMEOUT_SECONDS = 3
+DB_SAVE_INTERVAL = 5  # ← 추가: DB 저장 간격 (초)
 
 # 공유 데이터
 hospital_data = {}
@@ -207,7 +207,7 @@ def handle_client(conn, addr):
     """클라이언트 처리 (웹 로그 추가)"""
     ip, port = addr
     client_key = f"{ip}:{port}"
-    log(f"[접속] {client_key}")
+    # log(f"[접속] {client_key}")
 
     try:
         while True:
@@ -305,7 +305,7 @@ def handle_client(conn, addr):
         log(f"[오류] {client_key} 예외: {e}")
     finally:
         conn.close()
-        log(f"[종료] {client_key}")
+        # log(f"[종료] {client_key}")
 
 
 
@@ -361,7 +361,7 @@ def monitor_communication():
 
 def start_web_server():
     log(f"✅ 웹 서버 시작 - 포트 {WEB_PORT}")
-    log(f"   로컬 접속: http://192.168.0.13:{WEB_PORT}")
+    log(f"   로컬 접속: http://192.168.0.6:{WEB_PORT}")
     log(f"   외부 접속: http://Soluwins IP 주소:{WEB_PORT}")
     
     from waitress import serve

@@ -3,36 +3,15 @@
 block_cipher = None
 
 a = Analysis(
-    ['web_dashboard.py'],
+    ['dummy_hmi_client.py'],   # 엔트리 스크립트
     pathex=[],
     binaries=[],
-    datas=[
-        ('config/database.json', 'config'),
-        ('templates/*', 'templates'),
-        ('static/css/*', 'static/css'),
-        ('static/js/*', 'static/js'),
-    ],
-    hiddenimports=[
-        'flask',
-        'flask_cors',
-        'waitress',
-        'psycopg2',
-        'psycopg2._psycopg',
-        'core.database',
-        'core.csv_exporter',
-        'werkzeug',
-        'jinja2',
-    ],
+    datas=[],
+    hiddenimports=[],
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
-    excludes=[
-        'matplotlib',
-        'numpy',
-        'PIL',
-        'tkinter',
-        'PyQt6',
-    ],
+    excludes=[],
     win_no_prefer_redirects=False,
     win_private_assemblies=False,
     cipher=block_cipher,
@@ -48,18 +27,17 @@ exe = EXE(
     a.zipfiles,
     a.datas,
     [],
-    name='WebDashboard',
+    name='DummyHMI',          # 생성될 exe 이름
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
     upx=True,
     upx_exclude=[],
     runtime_tmpdir=None,
-    console=False,  # 콘솔 창 보이기
+    console=True,             # 콘솔 로그 보고 싶으니 True 유지
     disable_windowed_traceback=False,
     argv_emulation=False,
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
-    icon=None
 )

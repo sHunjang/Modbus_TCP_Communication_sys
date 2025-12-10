@@ -2,7 +2,7 @@
 const API_BASE = window.location.origin;
 
 // 타임아웃 설정 (초)
-const TIMEOUT_SECONDS = 30;
+const TIMEOUT_SECONDS = 3;
 
 // 로그 저장
 let logMessages = [];
@@ -205,4 +205,4 @@ async function exportCSV() {
 updateDashboard();
 
 // 5초마다 자동 갱신
-setInterval(updateDashboard, 5000);
+setInterval(updateDashboard, 3000);
