@@ -278,19 +278,31 @@ class CentralMainWindow(QMainWindow):
         QTimer.singleShot(5000, msg_box.close)
 
     def delete_hospital(self, hospital_name: str):
-        """병원 삭제"""
+        """병원 삭제 (메모리 + DB 모두 반영)"""
         reply = QMessageBox.question(
             self, "삭제 확인",
-            f"{hospital_name}을(를) 삭제하시겠습니까?",
+            f"{hospital_name}을(를) 삭제하시겠습니까?\n(DB에 저장된 데이터도 함께 삭제됩니다)",
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
         )
         if reply == QMessageBox.StandardButton.Yes:
+            # [버그 수정] 기존에는 메모리(dict)에서만 지워서, HMI가 다시 데이터를
+            # 보내는 순간 재등록되던 문제가 있었다. DB에서도 함께 삭제한다.
+            db_deleted = True
+            if self.db and self.db.db_available:
+                db_deleted = self.db.delete_hospital(hospital_name)
+
+            if not db_deleted:
+                QMessageBox.warning(
+                    self, "경고",
+                    f"{hospital_name} DB 삭제에 실패했습니다. (화면에서만 우선 제거됩니다)"
+                )
+
             with self.data_lock:
                 self.hospital_data.pop(hospital_name, None)
             with self.status_lock:
                 self.hospital_status.pop(hospital_name, None)
             self.alert_shown = {msg for msg in self.alert_shown if hospital_name not in msg}
-            self.log(f"🗑️ {hospital_name} 삭제")
+            self.log(f"🗑️ {hospital_name} 삭제 (DB 반영: {'성공' if db_deleted else '실패'})")
 
     def open_export_dialog(self):
         """CSV 내보내기 다이얼로그"""
