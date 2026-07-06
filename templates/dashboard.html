@@ -1,10 +1,18 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="ko">
     <head>
         <meta charset="UTF-8" />
         <meta name="viewport" content="width=device-width, initial-scale=1.0" />
         <title>🏥 근로복지공단 병원 전력량 모니터링 시스템 v1.3</title>
         <link rel="stylesheet" href="/static/css/style.css" />
+        <!-- Chart.js -->
+        <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+
+        <!-- [보안 수정] Flask가 index() 라우트에서 내려주는 API 키를
+             전역 변수로 노출. dashboard.js가 이 값을 모든 /api/* 요청 헤더에 담아 보낸다. -->
+        <!-- <script>
+            window.API_KEY = '{{ api_key }}';
+        </script> -->
     </head>
     <body>
         <div class="main-container">
@@ -17,7 +25,7 @@
             <!-- 실시간 전력량 섹션 -->
             <div class="table-section">
                 <div class="section-header">
-                    <h2>📊 실시간 전력량 (10초 갱신)</h2>
+                    <h2>📊 실시간 전력량 (5초 갱신)</h2>
                     <button class="export-btn" onclick="showExportDialog()">📥 CSV 내보내기</button>
                 </div>
 
@@ -27,15 +35,111 @@
                             <th style="width: 80px">순서</th>
                             <th>병원명 (IP주소:포트)</th>
                             <th style="width: 250px">전체 전력량 (kWh)</th>
-                            <th style="width: 120px">액션</th>
                         </tr>
                     </thead>
                     <tbody id="hospital-tbody">
                         <tr>
-                            <td colspan="4" class="no-data">데이터 로딩 중...</td>
+                            <td colspan="3" class="no-data">데이터 로딩 중...</td>
                         </tr>
                     </tbody>
                 </table>
+            </div>
+
+            <!-- 실시간 전력량 추이 섹션 -->
+            <div class="table-section chart-section">
+                <div class="section-header">
+                    <h2>⚡ 실시간 전력량 추이</h2>
+                    <div class="chart-controls">
+                        <select
+                            id="realtime-hospital-select"
+                            class="form-control-inline"
+                            onchange="onRealtimeControlsChange()"
+                        >
+                            <option value="">병원 선택...</option>
+                        </select>
+                        <select
+                            id="realtime-range-select"
+                            class="form-control-inline"
+                            onchange="onRealtimeControlsChange()"
+                        >
+                            <option value="10">최근 10분</option>
+                            <option value="30">최근 30분</option>
+                            <option value="60" selected>최근 1시간</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="chart-wrapper" style="height: 260px">
+                    <canvas id="realtime-chart"></canvas>
+                    <div id="realtime-no-data" class="chart-placeholder">병원을 선택하면 실시간 추이가 표시됩니다</div>
+                </div>
+            </div>
+
+            <!-- 월별 전력 사용량 섹션 -->
+            <div class="table-section chart-section">
+                <div class="section-header">
+                    <h2>📅 월별 전력 사용량</h2>
+                    <div class="chart-controls">
+                        <select id="chart-hospital-select" class="form-control-inline" onchange="loadMonthlyChart()">
+                            <option value="">병원 선택...</option>
+                        </select>
+                        <span class="chart-legend-tip">
+                            <span class="legend-dot current"></span>당월 <span class="legend-dot prev"></span>전년 동월
+                        </span>
+                    </div>
+                </div>
+                <div class="chart-wrapper">
+                    <canvas id="monthly-chart"></canvas>
+                    <div id="chart-no-data" class="chart-placeholder">병원을 선택하면 차트가 표시됩니다</div>
+                </div>
+                <!-- 월별 요약 통계 -->
+                <div id="monthly-stats" class="monthly-stats" style="display: none">
+                    <div class="stat-card">
+                        <div class="stat-label">최근 1개월</div>
+                        <div class="stat-value" id="stat-last"></div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-label">최근 3개월 평균</div>
+                        <div class="stat-value" id="stat-avg3"></div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-label">최근 12개월 최대</div>
+                        <div class="stat-value" id="stat-max"></div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-label">전월 대비</div>
+                        <div class="stat-value" id="stat-diff"></div>
+                    </div>
+                </div>
+
+                <!-- 일별 드릴다운 섹션 (기본 숨김, 막대 클릭 시 표시) -->
+                <div
+                    id="daily-section"
+                    style="display: none; margin-top: 20px; border-top: 2px solid #e0e0e0; padding-top: 16px"
+                >
+                    <div
+                        style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px"
+                    >
+                        <h3 id="daily-title" style="font-size: 14px; color: #0078d7; margin: 0"></h3>
+                        <button class="btn-secondary" onclick="closeDailySection()">닫기</button>
+                    </div>
+                    <div class="monthly-stats" style="margin-top: 0; margin-bottom: 16px">
+                        <div class="stat-card">
+                            <div class="stat-label">일 평균</div>
+                            <div class="stat-value" id="daily-avg">-</div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-label">최대 사용일</div>
+                            <div class="stat-value" id="daily-max">-</div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-label">최소 사용일</div>
+                            <div class="stat-value" id="daily-min">-</div>
+                        </div>
+                    </div>
+                    <div class="chart-wrapper" style="height: 220px">
+                        <canvas id="daily-chart"></canvas>
+                    </div>
+                </div>
             </div>
 
             <!-- 시스템 로그 섹션 -->
@@ -46,9 +150,9 @@
 
             <!-- 상태바 -->
             <div class="status-bar">
-                <span id="status-text"
-                    >서버 시작 | <span id="db-status">⚠️ DB 끊김</span> | 10초 단위 저장 | 타임아웃: 30초</span
-                >
+                <span id="status-text">
+                    서버 시작 | <span id="db-status">⚠️ DB 끊김</span> | 5초 단위 저장 | 타임아웃: 3초
+                </span>
             </div>
         </div>
 
