@@ -235,6 +235,7 @@ def parse_hmi_data(data: bytes) -> tuple:
 def handle_client(conn, addr):
     ip, port = addr
     client_key = f"{ip}:{port}"
+    buffer = b""   # [버그 수정] 여러 메시지가 하나의 recv에 뭉쳐 들어오는 경우를 대비한 버퍼
 
     try:
         while True:
@@ -242,13 +243,23 @@ def handle_client(conn, addr):
             if not data:
                 break
 
-            hex_str = ' '.join(f'{b:02X}' for b in data)
-            print(f"[HEX {client_key}] {hex_str}")
+            buffer += data
 
-            hospital_name, power_value, _ = parse_hmi_data(data)
+            # [버그 수정] 버퍼에 13바이트 이상 쌓일 때마다 13바이트씩 정확히 잘라서 처리.
+            # 기존에는 recv()로 받은 바이트 뭉치를 검증 없이 통째로 넘겨서,
+            # 두 메시지가 짧은 시간차로 도착해 하나로 뭉쳐 들어오면(예: 26바이트)
+            # 그대로 DB에 잘못된 값이 저장되는 문제가 있었다.
+            while len(buffer) >= HMI_DATA_LENGTH:
+                chunk = buffer[:HMI_DATA_LENGTH]
+                buffer = buffer[HMI_DATA_LENGTH:]
 
-            if hospital_name is None or power_value is None:
-                continue
+                hex_str = ' '.join(f'{b:02X}' for b in chunk)
+                print(f"[HEX {client_key}] {hex_str}")
+
+                hospital_name, power_value, _ = parse_hmi_data(chunk)
+
+                if hospital_name is None or power_value is None:
+                    continue
 
             current_time = datetime.now()
             current_time_str = current_time.strftime("%Y-%m-%d %H:%M:%S")

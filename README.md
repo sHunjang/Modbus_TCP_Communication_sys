@@ -1,4 +1,4 @@
-# 🏥 중앙 모니터링 시스템 v1.3
+# 🏥 중앙 모니터링 시스템 v1.5
 
 병원 HMI에서 전력량 데이터를 수신하여 실시간 모니터링 및 저장하는 시스템
 
@@ -69,6 +69,7 @@ CREATE DATABASE hospitals;
 ```bash
 python central_monitor.py
 ```
+- 또는 exe 파일 실행 (CentralMonitor.exe)
 
 ## 🎯 주요 기능
 

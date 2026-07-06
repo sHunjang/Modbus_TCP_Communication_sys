@@ -284,7 +284,21 @@ class DatabaseManager:
                 print("✅ DB 연결 풀 닫힘")
 
     def register_hospital(self, hospital_key: str, ip_address: str, port: int):
-        """병원 등록 및 데이터 테이블 생성"""
+        """
+        병원 등록 및 데이터 테이블 생성
+
+        [버그 수정] 기존에는 hospitals 테이블에 이미 등록된 병원이면
+        곧바로 return True로 끝나서, 데이터 테이블(hospital_XXX) 생성
+        코드가 두 번 다시 실행되지 않았다. 만약 최초 등록 시점에 hospitals
+        INSERT는 성공했는데 바로 이어지는 CREATE TABLE만 실패하는 상황
+        (일시적 DB 부하, 커넥션 문제 등)이 벌어지면, 그 병원은 영원히
+        데이터 테이블 없이 남아 모든 INSERT가 "relation does not exist"로
+        계속 실패하는 상태에 빠졌다 — 재시작해도 스스로 복구되지 않았다.
+
+        수정 후에는 hospitals 등록 여부와 무관하게 CREATE TABLE IF NOT EXISTS를
+        매번 시도한다. 이미 테이블이 있으면 그냥 넘어가므로 비용은 무시할 수준이고,
+        테이블이 빠진 상태라면 다음 호출 때 자동으로 복구된다.
+        """
         if not self.db_available:
             return False
 
@@ -294,6 +308,7 @@ class DatabaseManager:
 
         table_name = f"hospital_{hospital_key.replace('.', '_').replace(':', '_')}"
 
+        # 1) hospitals 테이블에 병원 정보 등록 (없을 때만 INSERT)
         conn = None
         try:
             conn = self.get_connection()
@@ -303,19 +318,16 @@ class DatabaseManager:
                 "SELECT id FROM hospitals WHERE hospital_key = %s",
                 (hospital_key,),
             )
-            if cursor.fetchone():
-                cursor.close()
-                self.release_connection(conn)
-                return True
+            if not cursor.fetchone():
+                cursor.execute(
+                    """
+                    INSERT INTO hospitals (hospital_key, ip_address, port)
+                    VALUES (%s, %s, %s)
+                    """,
+                    (hospital_key, ip_address, port),
+                )
+                conn.commit()
 
-            cursor.execute(
-                """
-                INSERT INTO hospitals (hospital_key, ip_address, port)
-                VALUES (%s, %s, %s)
-                """,
-                (hospital_key, ip_address, port),
-            )
-            conn.commit()
             cursor.close()
             self.release_connection(conn)
 
@@ -326,6 +338,7 @@ class DatabaseManager:
             print(f"❌ hospitals 등록 오류: {e}")
             return False
 
+        # 2) [수정] 데이터 테이블은 hospitals 등록 여부와 무관하게 매번 확인/생성 시도
         conn = None
         try:
             conn = self.get_connection()
@@ -350,7 +363,6 @@ class DatabaseManager:
             cursor.close()
             self.release_connection(conn)
 
-            print(f"✅ {hospital_key} 등록 완료 (테이블: {table_name})")
             return True
 
         except Exception as e:

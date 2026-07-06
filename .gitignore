@@ -46,3 +46,7 @@ config/local.json
 # Backup
 *.bak
 *.backup
+
+current_data.txt
+buffer/
+exports/
