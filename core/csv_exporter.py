@@ -14,6 +14,7 @@ CSV 내보내기 기능
 
 import csv
 import os
+import re          # [보안 수정] hospital_name 형식 검증용
 import sys
 from datetime import datetime
 from pathlib import Path
@@ -21,6 +22,11 @@ from pathlib import Path
 
 class CSVExporter:
     """CSV 내보내기 클래스"""
+
+    # [보안 수정] database.py의 HOSPITAL_KEY_PATTERN과 동일한 규칙.
+    # 여기서도 한 번 더 막아야, 이 클래스가 DatabaseManager의 검증을 거치지 않고
+    # (예: 앞으로 다른 코드에서) 직접 호출되더라도 SQL 인젝션에 안전하다.
+    HOSPITAL_NAME_PATTERN = re.compile(r'^[A-Za-z0-9_]{1,20}$')
 
     def __init__(self, export_dir="exports"):
         """
@@ -68,6 +74,11 @@ class CSVExporter:
         Returns:
             tuple: (성공 여부(bool), 파일경로(str 또는 None), 메시지(str))
         """
+        # [보안 수정] hospital_name은 곧바로 SQL 테이블명에 쓰이므로
+        # 형식이 이상하면 쿼리를 실행하지 않고 즉시 실패 처리한다.
+        if not self.HOSPITAL_NAME_PATTERN.match(hospital_name or ""):
+            return False, None, f"잘못된 병원 코드 형식입니다: {hospital_name}"
+
         try:
             # 테이블명 생성
             table_name = f"hospital_{hospital_name.replace('.', '_').replace(':', '_')}"
@@ -123,17 +134,18 @@ class CSVExporter:
                     # 시간 포맷팅
                     time_str = timestamp.strftime("%Y-%m-%d %H:%M:%S") if timestamp else ""
                     
-                    # 전력량 포맷팅 (소수점 2자리)
-                    value_str = f"{float(value):.2f}" if value else ""
+                    # [버그 수정] "0"(falsy) 값이면 빈칸으로 나오던 문제 방지.
+                    # value가 None일 때만 빈칸으로 처리하고, 0은 정상적으로 "0.00"으로 표시.
+                    value_str = f"{float(value):.2f}" if value is not None else ""
                     
                     writer.writerow([time_str, value_str, hex_data])
 
             # 간단 통계 계산
             data_count = len(rows)
-            total_energy = sum(float(row[1]) for row in rows if row[1])
+            total_energy = sum(float(row[1]) for row in rows if row[1] is not None)
             avg_energy = total_energy / data_count if data_count > 0 else 0
-            max_energy = max(float(row[1]) for row in rows if row[1]) if data_count > 0 else 0
-            min_energy = min(float(row[1]) for row in rows if row[1]) if data_count > 0 else 0
+            max_energy = max((float(row[1]) for row in rows if row[1] is not None), default=0)
+            min_energy = min((float(row[1]) for row in rows if row[1] is not None), default=0)
 
             # 결과 메시지
             message = (
@@ -160,15 +172,6 @@ class CSVExporter:
     ):
         """
         모든 병원 데이터를 한 번에 CSV로 내보내기
-        
-        Args:
-            database: DatabaseManager 인스턴스
-            hospital_names (list[str]): 병원명 리스트 (예: ["ICN", "SEL", "BUS"])
-            start_datetime (datetime): 시작 시간
-            end_datetime (datetime): 종료 시간
-        
-        Returns:
-            tuple: (결과 리스트[(bool, msg)], 파일경로 리스트[str])
         """
         results = []
         filepaths = []
@@ -187,17 +190,7 @@ class CSVExporter:
         return results, filepaths
 
     def get_export_files(self):
-        """
-        내보낸 CSV 파일 목록 조회
-        
-        Returns:
-            list[dict]: 파일 정보 리스트
-                - name: 파일명
-                - path: 전체 경로
-                - size: 바이트 크기
-                - size_mb: MB 크기
-                - time: 수정 시각
-        """
+        """내보낸 CSV 파일 목록 조회"""
         if not os.path.exists(self.export_dir):
             return []
 
@@ -206,7 +199,6 @@ class CSVExporter:
             if file.endswith(".csv"):
                 filepath = os.path.join(self.export_dir, file)
                 
-                # 파일 정보 가져오기
                 file_size = os.path.getsize(filepath)
                 file_time = datetime.fromtimestamp(os.path.getmtime(filepath))
                 
@@ -220,19 +212,10 @@ class CSVExporter:
                     }
                 )
 
-        # 시간 기준 내림차순 정렬 (최신 파일 먼저)
         return sorted(files, key=lambda x: x["time"], reverse=True)
 
     def delete_export_file(self, filepath: str) -> bool:
-        """
-        CSV 파일 삭제
-        
-        Args:
-            filepath: 삭제할 파일 경로
-        
-        Returns:
-            bool: 성공 여부
-        """
+        """CSV 파일 삭제"""
         try:
             if os.path.exists(filepath):
                 os.remove(filepath)
@@ -244,15 +227,7 @@ class CSVExporter:
             return False
 
     def get_file_info(self, filepath: str) -> dict:
-        """
-        특정 CSV 파일의 정보 조회
-        
-        Args:
-            filepath: 파일 경로
-        
-        Returns:
-            dict: 파일 정보 또는 None
-        """
+        """특정 CSV 파일의 정보 조회"""
         try:
             if not os.path.exists(filepath):
                 return None
@@ -260,7 +235,6 @@ class CSVExporter:
             file_size = os.path.getsize(filepath)
             file_time = datetime.fromtimestamp(os.path.getmtime(filepath))
             
-            # CSV 파일 행 수 세기
             with open(filepath, 'r', encoding='utf-8-sig') as f:
                 row_count = sum(1 for _ in f) - 1  # 헤더 제외
             
