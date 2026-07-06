@@ -1,13 +1,16 @@
 # -*- mode: python ; coding: utf-8 -*-
 
+from PyInstaller.utils.hooks import collect_dynamic_libs
+
+psycopg2_binaries = collect_dynamic_libs('psycopg2')
+
 block_cipher = None
 
 a = Analysis(
     ['central_monitor.py'],
     pathex=[],
-    binaries=[],
+    binaries=psycopg2_binaries,
     datas=[
-        ('config/database.json', 'config'),
         ('templates/*', 'templates'),
         ('static/css/*', 'static/css'),
         ('static/js/*', 'static/js'),
@@ -32,6 +35,7 @@ a = Analysis(
         # Core 모듈
         'core.database',
         'core.csv_exporter',
+        'core.web_routes',
         
         # UI 모듈 (추가)
         'UI.main_window',
@@ -72,7 +76,7 @@ exe = EXE(
     upx=True,
     upx_exclude=[],
     runtime_tmpdir=None,
-    console=False,
+    console=True,
     disable_windowed_traceback=False,
     argv_emulation=False,
     target_arch=None,
